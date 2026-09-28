@@ -1,0 +1,71 @@
+2026-09-27 07:38:17,715 - aqt.helper - DEBUG - helper 66768 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_684/qt6_684/Updates.xml.sha256
+2026-09-27 07:38:18,755 - aqt.helper - DEBUG - helper 66768 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_684/qt6_684/Updates.xml.sha256
+2026-09-27 07:38:19,662 - aqt.helper - DEBUG - helper 66768 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_684/qt6_684/Updates.xml.sha256
+2026-09-27 07:38:20,598 - aqt.helper - DEBUG - helper 66768 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_684/qt6_684/Updates.xml.sha256
+2026-09-27 07:38:22,838 - aqt.helper - DEBUG - helper 66768 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_684/qt6_684/Updates.xml.sha256
+2026-09-27 07:38:23,751 - aqt.main - ERROR - installer 66768 Failed to download checksum for the file 'Updates.xml' from mirrors '['https://download.qt.io']
+==============================Suggested follow-up:==============================
+* Check your internet connection
+* Consider modifying `requests.max_retries_to_retrieve_hash` in settings.ini
+* Consider modifying `mirrors.trusted_mirrors` in settings.ini (see https://aqtinstall.readthedocs.io/en/stable/configuration.html#configuration)
+* Please use 'aqt list-qt windows desktop' to show versions of Qt available.
+2026-09-27 07:38:44,909 - aqt.helper - DEBUG - helper 62200 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/Updates.xml.sha256
+2026-09-27 07:38:56,636 - aqt.helper - DEBUG - helper 59672 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/Updates.xml.sha256
+2026-09-27 07:39:06,937 - aqt.main - INFO - installer 66944 aqtinstall(aqt) v3.3.0 on Python 3.13.5 [CPython MSC v.1943 64 bit (AMD64)]
+2026-09-27 07:39:06,938 - aqt.helper - DEBUG - helper 66944 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/Updates.xml.sha256
+2026-09-27 07:39:09,027 - aqt.helper - DEBUG - helper 66944 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2022_64/Updates.xml.sha256
+2026-09-27 07:39:10,886 - aqt.archives - INFO - archives 66944 Found extension qtwebengine
+2026-09-27 07:39:10,886 - aqt.helper - DEBUG - helper 66944 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/683/msvc2022_64/Updates.xml.sha256
+2026-09-27 07:39:12,884 - aqt.archives - INFO - archives 66944 Found extension qtpdf
+2026-09-27 07:39:12,906 - aqt.installer - INFO - installer 66944 DRY RUN: Would download and install the following:
+2026-09-27 07:39:12,906 - aqt.installer - INFO - installer 66944   - qtbase: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-09-27 07:39:12,906 - aqt.installer - INFO - installer 66944 Total packages: 1
+2026-09-27 07:39:18,888 - aqt.main - INFO - installer 66164 aqtinstall(aqt) v3.3.0 on Python 3.13.5 [CPython MSC v.1943 64 bit (AMD64)]
+2026-09-27 07:39:18,889 - aqt.helper - DEBUG - helper 66164 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/Updates.xml.sha256
+2026-09-27 07:39:21,020 - aqt.helper - DEBUG - helper 66164 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2022_64/Updates.xml.sha256
+2026-09-27 07:39:23,004 - aqt.archives - INFO - archives 66164 Found extension qtwebengine
+2026-09-27 07:39:23,004 - aqt.helper - DEBUG - helper 66164 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/683/msvc2022_64/Updates.xml.sha256
+2026-09-27 07:39:24,873 - aqt.archives - INFO - archives 66164 Found extension qtpdf
+2026-09-27 07:39:25,955 - aqt.helper - DEBUG - helper 47828 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z.sha256
+2026-09-27 07:39:26,910 - aqt.helper - INFO - helper 47828 Downloading qtbase...
+2026-09-27 07:39:26,910 - aqt.installer - DEBUG - installer 47828 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z
+2026-09-27 07:39:27,851 - aqt.helper - DEBUG - helper 47828 Asked to redirect(302) to: https://mirrors.sau.edu.cn/qt/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z
+2026-09-27 07:39:27,851 - aqt.helper - INFO - helper 47828 Redirected: mirrors.sau.edu.cn
+2026-09-27 07:40:05,103 - aqt.installer - INFO - installer 47828 Finished installation of qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z in 39.15141850
+2026-09-27 07:40:05,542 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\bin\qmake.exe
+2026-09-27 07:40:05,546 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Concurrent.prl
+2026-09-27 07:40:05,547 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Concurrentd.prl
+2026-09-27 07:40:05,548 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Core.prl
+2026-09-27 07:40:05,549 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Cored.prl
+2026-09-27 07:40:05,550 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6DBus.prl
+2026-09-27 07:40:05,551 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6DBusd.prl
+2026-09-27 07:40:05,552 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6DeviceDiscoverySupport.prl
+2026-09-27 07:40:05,553 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6DeviceDiscoverySupportd.prl
+2026-09-27 07:40:05,554 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6EntryPoint.prl
+2026-09-27 07:40:05,555 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6EntryPointd.prl
+2026-09-27 07:40:05,556 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6ExampleIcons.prl
+2026-09-27 07:40:05,557 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6ExampleIconsd.prl
+2026-09-27 07:40:05,558 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6ExamplesAssetDownloader.prl
+2026-09-27 07:40:05,559 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6ExamplesAssetDownloaderd.prl
+2026-09-27 07:40:05,560 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6FbSupport.prl
+2026-09-27 07:40:05,561 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6FbSupportd.prl
+2026-09-27 07:40:05,562 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Gui.prl
+2026-09-27 07:40:05,563 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Guid.prl
+2026-09-27 07:40:05,564 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Network.prl
+2026-09-27 07:40:05,565 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Networkd.prl
+2026-09-27 07:40:05,566 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6OpenGL.prl
+2026-09-27 07:40:05,567 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6OpenGLd.prl
+2026-09-27 07:40:05,568 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6OpenGLWidgets.prl
+2026-09-27 07:40:05,569 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6OpenGLWidgetsd.prl
+2026-09-27 07:40:05,570 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6PrintSupport.prl
+2026-09-27 07:40:05,571 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6PrintSupportd.prl
+2026-09-27 07:40:05,573 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Sql.prl
+2026-09-27 07:40:05,574 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Sqld.prl
+2026-09-27 07:40:05,575 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Test.prl
+2026-09-27 07:40:05,576 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Testd.prl
+2026-09-27 07:40:05,577 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Widgets.prl
+2026-09-27 07:40:05,578 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Widgetsd.prl
+2026-09-27 07:40:05,579 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Xml.prl
+2026-09-27 07:40:05,580 - aqt.updater - INFO - updater 66164 Patching D:\Project\p4vpatch\.sdk\6.8.3\msvc2022_64\lib\Qt6Xmld.prl
+2026-09-27 07:40:05,582 - aqt.main - INFO - installer 66164 Finished installation
+2026-09-27 07:40:05,582 - aqt.main - INFO - installer 66164 Time elapsed: 46.69410360 second
