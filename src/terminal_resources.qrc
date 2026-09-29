@@ -1,0 +1,7 @@
+<RCC><qresource prefix="/p4vpatch/terminal">
+  <file alias="index.html">../assets/terminal/index.html</file>
+  <file alias="terminal.js">../assets/terminal/terminal.js</file>
+  <file alias="xterm.js">../assets/terminal/xterm.js</file>
+  <file alias="xterm.css">../assets/terminal/xterm.css</file>
+  <file alias="addon-fit.js">../assets/terminal/addon-fit.js</file>
+</qresource></RCC>

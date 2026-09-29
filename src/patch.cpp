@@ -1,3 +1,5 @@
+#include "terminal.h"
+
 #include <windows.h>
 
 #include <QAbstractButton>
@@ -5,11 +7,15 @@
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
 #include <QEvent>
 #include <QHash>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLayout>
+#include <QMainWindow>
 #include <QPointer>
 #include <QPushButton>
 #include <QTimer>
@@ -40,6 +46,10 @@ public:
 protected:
     bool eventFilter(QObject* object, QEvent* event) override {
         if (event->type() != QEvent::Show) return false;
+        if (auto* main = qobject_cast<QMainWindow*>(object)) {
+            QPointer<QMainWindow> weak(main);
+            QTimer::singleShot(0, main, [weak] { if (weak) installTerminal(weak); });
+        }
         auto* dialog = qobject_cast<QDialog*>(object);
         if (!dialog || dialog->windowTitle() != QStringLiteral("Perforce Password Required"))
             return false;
@@ -169,17 +179,31 @@ DWORD WINAPI bootstrap(void*) {
     wchar_t exe[MAX_PATH]{};
     if (!GetModuleFileNameW(nullptr, exe, MAX_PATH)) return 0;
     const wchar_t* name = wcsrchr(exe, L'\\');
-    if (_wcsicmp(name ? name + 1 : exe, L"p4v.exe") != 0 ||
-        std::strcmp(qVersion(), kQtVersion) != 0) return 0;
+    if (_wcsicmp(name ? name + 1 : exe, L"p4v.exe") != 0) return 0;
+    const bool inspect = qEnvironmentVariableIsSet("P4VPATCH_INSPECT_NATIVE_TABS");
+    auto note = [inspect](const QString& text) {
+        if (!inspect) return;
+        QFile file(QDir::temp().filePath(QStringLiteral("p4vpatch-native-tabs.txt")));
+        if (file.open(QIODevice::Append | QIODevice::Text)) {
+            QTextStream out(&file);
+            out << text << '\n';
+        }
+    };
+    note(QStringLiteral("DLL bootstrapped; Qt %1 (requires %2)")
+         .arg(QString::fromLatin1(qVersion()), QString::fromLatin1(kQtVersion)));
+    if (std::strcmp(qVersion(), kQtVersion) != 0) return 0;
     for (int i = 0; i < 300; ++i) {
         auto* app = qobject_cast<QApplication*>(QCoreApplication::instance());
         if (app) {
+            note(QStringLiteral("QApplication found; waiting for UIWorkspace2 / View / Log"));
             QTimer::singleShot(0, app, [app] {
                 // Keep the watcher on the GUI thread for the app's lifetime.
                 auto* watcher = new PasswordWatcher(app);
                 app->installEventFilter(watcher);
                 // Cover a dialog that appeared between startup and injection.
                 for (auto* widget : QApplication::topLevelWidgets()) {
+                    if (auto* main = qobject_cast<QMainWindow*>(widget))
+                        installTerminal(main);
                     auto* dialog = qobject_cast<QDialog*>(widget);
                     if (dialog && dialog->isVisible()) {
                         watcher->inspectVisible(dialog);
