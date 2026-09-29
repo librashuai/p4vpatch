@@ -6,6 +6,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QTreeView>
 #include <QTabBar>
 #include <QByteArray>
 #include <QDateTime>
@@ -230,8 +231,8 @@ public:
         timer->start();
     }
     ~TerminalSession() override { stop(); }
-    bool start(QString* error) {
-        return pty_.start(QDir::homePath(), [this](QByteArray data) {
+    bool start(const QString& directory, QString* error) {
+        return pty_.start(directory, [this](QByteArray data) {
             std::unique_lock<std::mutex> lock(outputMutex_);
             space_.wait(lock, [this, &data] {
                 return stopped_ || queuedBytes_ + size_t(data.size()) <= 512 * 1024;
@@ -289,6 +290,29 @@ private:
     bool ready_ = false;
     int inFlight_ = 0;
 };
+
+// P4V's local WorkspaceTree has a single top-level entry showing the active
+// workspace's local root (not the current selection or the DepotTree path).
+// Read it at session creation so switching workspaces before opening Terminal
+// uses the new root. Never infer it from P4CLIENT or the process cwd.
+QString workspaceDirectory(QMainWindow* main) {
+    if (main) {
+        QTreeView* tree = nullptr;
+        for (auto* candidate : main->findChildren<QTreeView*>(QStringLiteral("WorkspaceTree"))) {
+            if (candidate->parentWidget() &&
+                candidate->parentWidget()->objectName() == QStringLiteral("localDirWidget")) {
+                if (tree) return QDir::homePath(); // ambiguous P4V layout
+                tree = candidate;
+            }
+        }
+        if (tree && tree->model() && tree->model()->rowCount() == 1) {
+            const QString root = tree->model()->index(0, 0).data(Qt::DisplayRole).toString().trimmed();
+            if (QDir::isAbsolutePath(root) && QDir(root).exists())
+                return QDir(root).absolutePath();
+        }
+    }
+    return QDir::homePath(); // no workspace, invalid or unavailable root
+}
 
 QString plainText(QString value) {
     value.remove(QLatin1Char('&'));
@@ -470,7 +494,7 @@ private:
             if (realTerminal) {
                 auto* session = new TerminalSession(this);
                 QString error;
-                if (!session->start(&error)) {
+                if (!session->start(workspaceDirectory(main_), &error)) {
                     delete page; delete session;
                     menuAction_->setChecked(false);
                     QMessageBox::warning(main_, QStringLiteral("Terminal unavailable"), error);

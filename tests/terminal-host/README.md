@@ -1,6 +1,6 @@
 # 终端模拟主窗口测试
 
-`mock-host.exe` 默认验证原生标签、ConPTY、Qt 焦点信号过滤、关闭重开及主窗口无闪烁；设置 `P4VPATCH_DISABLE_TERMINAL=1` 则验证显式停用。**模拟宿主无法模拟 P4V 私有焦点回调；模拟通过不能证明真实 P4V 安全。** 本版本还在真实 P4V 中测试了输入光标、反复切换与关闭，以及正常退出。
+`mock-host.exe` 默认验证原生标签、ConPTY、当前 workspace 根目录作为新会话工作目录、Qt 焦点信号过滤、关闭重开及主窗口无闪烁；设置 `P4VPATCH_TEST_NO_WORKSPACE=1` 可验证无 workspace 时回退用户主目录，设置 `P4VPATCH_DISABLE_TERMINAL=1` 则验证显式停用。**模拟宿主无法模拟 P4V 私有焦点回调；模拟通过不能证明真实 P4V 安全。** 本版本还在真实 P4V 中测试了输入光标、反复切换与关闭，以及正常退出。
 
 在项目根目录、x64 Visual Studio Developer PowerShell 中构建（需 Qt 6.8.3 MSVC x64 SDK；见根目录 README）：
 

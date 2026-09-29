@@ -32,7 +32,7 @@ python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O .sdk --modul
 
 ## 终端面板
 
-启动后选择 **View → Terminal**，或点击 Log/Dashboard 旁的 Terminal 标签。此标签是真正加入 P4V `UILogTabWidget` 的第三页，不是另一个 dock 或绘制的假标签。WebEngine/xterm.js 显示 ConPTY 的终端（默认为 `cmd.exe`）；打开时会聚焦输入，关闭标签的 × 只隐藏页面，重开继续使用同一进程。默认目录为用户主目录，不是 P4V workspace。若只需登录补丁，可在启动前设置 `P4VPATCH_DISABLE_TERMINAL=1`。
+启动后选择 **View → Terminal**，或点击 Log/Dashboard 旁的 Terminal 标签。此标签是真正加入 P4V `UILogTabWidget` 的第三页，不是另一个 dock 或绘制的假标签。WebEngine/xterm.js 显示 ConPTY 的终端（默认为 `cmd.exe`）；打开时会聚焦输入，关闭标签的 × 只隐藏页面，重开继续使用同一进程。新建终端会以当前 P4V workspace 的本地根目录为默认工作目录；未选择 workspace 或根目录不可用时回退到用户主目录。已打开的终端保持原工作目录，切换 workspace 后需重新启动 P4V 才能创建新会话。若只需登录补丁，可在启动前设置 `P4VPATCH_DISABLE_TERMINAL=1`。
 
 **Patch 设置：** 打开 **Edit → Preferences → Patch**，在 **Terminal Shell** 中选择 `cmd.exe`（默认）、`pwsh`（从 PATH 查找），或使用 Browse 指定已有的 `pwsh.exe` 绝对路径。点击 P4V 原有的 **Apply/OK** 保存，**Cancel** 不保存。配置独立保存在 P4V 的 `ApplicationSettings.xml` 所在目录下的 `~/.p4qt/p4vpatch.ini`，不改写 P4V 的设置文件。已经打开的终端继续使用原有 shell，重新启动 P4V 后生效。
 

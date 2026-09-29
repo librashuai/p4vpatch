@@ -1,5 +1,6 @@
 // Fake P4V host exercising the production terminal without injecting P4V.
 #include "../../src/terminal.h"
+#include "../../src/preferences.h"
 #include "../../src/qt_focus_hook.h"
 #include <windows.h>
 #include <tlhelp32.h>
@@ -12,6 +13,8 @@
 #include <QMenuBar>
 #include <QMouseEvent>
 #include <QSplitter>
+#include <QStandardItemModel>
+#include <QTreeView>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
@@ -43,7 +46,8 @@ static int childCmdCount() {
     if (Process32FirstW(snapshot, &entry)) {
         do {
             if (entry.th32ParentProcessID == GetCurrentProcessId() &&
-                _wcsicmp(entry.szExeFile, L"cmd.exe") == 0) ++count;
+                (_wcsicmp(entry.szExeFile, L"cmd.exe") == 0 ||
+                 _wcsicmp(entry.szExeFile, L"pwsh.exe") == 0)) ++count;
         } while (Process32NextW(snapshot, &entry));
     }
     CloseHandle(snapshot);
@@ -66,6 +70,15 @@ int main(int argc, char** argv) {
                      [&](int) { ++hostCloseRequests; });
     splitter->addWidget(tabs);
     main.setCentralWidget(splitter);
+    // Mimic P4V's local WorkspaceTree: the root row is the workspace path.
+    auto* local = new QWidget(&main);
+    local->setObjectName(QStringLiteral("localDirWidget"));
+    auto* tree = new QTreeView(local);
+    tree->setObjectName(QStringLiteral("WorkspaceTree"));
+    auto* model = new QStandardItemModel(tree);
+    model->appendRow(new QStandardItem(QDir::homePath()));
+    tree->setModel(model);
+    QString expected;
     main.show();
     WindowEvents events;
     main.installEventFilter(&events);
@@ -88,6 +101,12 @@ int main(int argc, char** argv) {
     action->trigger(); // cancel opening before the menu returns
     QTimer::singleShot(0, &app, [&] {
         if (tabs->count() != 2 || childCmdCount()) { app.exit(4); return; }
+        // Switching workspaces before opening must use the current root, not
+        // a cached value from when the Terminal action was installed.
+        const bool noWorkspace = qEnvironmentVariableIsSet("P4VPATCH_TEST_NO_WORKSPACE");
+        expected = noWorkspace ? QDir::homePath() : QDir::tempPath();
+        if (noWorkspace) model->clear();
+        else model->item(0)->setText(expected);
         action->trigger();
         QTimer::singleShot(0, &app, [&] {
             const int index = tabs->count() - 1;
@@ -138,16 +157,21 @@ int main(int argc, char** argv) {
             };
             if (probe) { finish(); return; }
             auto* view = tabs->findChild<QWebEngineView*>(QStringLiteral("p4vpatch.nativeTerminalView"));
-            if (!view || childCmdCount() != 1) { app.exit(11); return; }
+            if (!view || childCmdCount() != 1) {
+                std::fprintf(stderr, "Terminal view=%p shell=%s child processes=%d\n",
+                             static_cast<void*>(view), qPrintable(terminalShell()), childCmdCount());
+                app.exit(11); return;
+            }
             QObject::connect(view, &QWebEngineView::loadFinished, &app, [&, view, finish](bool ok) {
                 if (!ok) { app.exit(12); return; }
                 QTimer::singleShot(1000, &app, [&, view, finish] {
-                    view->page()->runJavaScript(QStringLiteral("({ready:typeof window.p4vpatchFocusTerminal === 'function',prompt:document.body.innerText.includes('>')})"),
+                    view->page()->runJavaScript(QStringLiteral("document.body.innerText"),
                                                 [&, finish](const QVariant& result) {
-                        const auto state = result.toMap();
-                        if (!state.value(QStringLiteral("ready")).toBool() ||
-                            !state.value(QStringLiteral("prompt")).toBool()) {
-                            std::fprintf(stderr, "xterm not ready or shell output not parsed\n");
+                        const QString output = result.toString();
+                        if (!output.contains(QDir::toNativeSeparators(expected) + QLatin1Char('>'),
+                                             Qt::CaseInsensitive)) {
+                            std::fprintf(stderr, "Expected %s, got %s\n", qPrintable(expected), qPrintable(output));
+                            std::fprintf(stderr, "Shell prompt does not show expected workspace directory\n");
                             app.exit(13); return;
                         }
                         finish();
