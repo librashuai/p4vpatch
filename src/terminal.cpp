@@ -1,4 +1,5 @@
 #include "terminal.h"
+#include "preferences.h"
 #include "qt_focus_hook.h"
 
 #include <windows.h>
@@ -22,6 +23,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPointer>
+#include <QStandardPaths>
 #include <QTabWidget>
 #include <QTimer>
 #include <QWebChannel>
@@ -77,30 +79,40 @@ public:
         PROCESS_INFORMATION process{};
         BOOL created = FALSE;
         DWORD creationError = 0;
-        if (attributed) {
+        const QString shell = terminalShell();
+        QString executable;
+        if (shell.compare(QStringLiteral("cmd.exe"), Qt::CaseInsensitive) == 0) {
+            wchar_t system[MAX_PATH]{};
+            if (GetSystemDirectoryW(system, MAX_PATH))
+                executable = QString::fromWCharArray(system) + QStringLiteral("\\cmd.exe");
+            else creationError = GetLastError();
+        } else if (shell.compare(QStringLiteral("pwsh"), Qt::CaseInsensitive) == 0) {
+            executable = QStandardPaths::findExecutable(QStringLiteral("pwsh.exe"));
+            if (executable.isEmpty())
+                *error = QStringLiteral("pwsh.exe was not found on PATH. Select its full path in Edit > Preferences > Patch.");
+        } else {
+            executable = shell; // Preferences validates this as an absolute pwsh.exe path.
+        }
+        if (attributed && !executable.isEmpty()) {
             STARTUPINFOEXW startup{};
             startup.StartupInfo.cb = sizeof(startup);
             // Otherwise console clients may inherit P4V's (or its launcher's) std handles.
             startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
             startup.lpAttributeList = attributes;
-            wchar_t system[MAX_PATH]{};
-            if (GetSystemDirectoryW(system, MAX_PATH)) {
-                const std::wstring command = std::wstring(system) + L"\\cmd.exe";
-                std::wstring line = command;
-                const std::wstring cwd = directory.toStdWString();
-                created = CreateProcessW(command.c_str(), line.data(), nullptr, nullptr, FALSE,
-                    EXTENDED_STARTUPINFO_PRESENT, nullptr, cwd.c_str(), &startup.StartupInfo, &process);
-                creationError = GetLastError();
-            } else {
-                creationError = GetLastError();
-            }
+            std::wstring command = executable.toStdWString();
+            std::wstring line = L"\"" + command + L"\"";
+            const std::wstring cwd = directory.toStdWString();
+            created = CreateProcessW(command.c_str(), line.data(), nullptr, nullptr, FALSE,
+                EXTENDED_STARTUPINFO_PRESENT, nullptr, cwd.c_str(), &startup.StartupInfo, &process);
+            creationError = GetLastError();
         }
         // ConPTY borrows its input/output pipe endpoints until after CreateProcess.
         close(inputRead); close(outputWrite);
         DeleteProcThreadAttributeList(attributes);
         HeapFree(GetProcessHeap(), 0, attributes);
         if (!created) {
-            if (attributed) *error = QStringLiteral("Cannot launch cmd.exe (%1)").arg(creationError);
+            if (attributed && error->isEmpty())
+                *error = QStringLiteral("Cannot launch %1 (%2)").arg(shell).arg(creationError);
             stop(); return false;
         }
         process_ = process.hProcess;

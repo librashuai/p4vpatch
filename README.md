@@ -32,7 +32,9 @@ python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O .sdk --modul
 
 ## 终端面板
 
-启动后选择 **View → Terminal**，或点击 Log/Dashboard 旁的 Terminal 标签。此标签是真正加入 P4V `UILogTabWidget` 的第三页，不是另一个 dock 或绘制的假标签。WebEngine/xterm.js 显示 ConPTY 的 `cmd.exe`；打开时会聚焦输入，关闭标签的 × 只隐藏页面，重开继续使用同一进程。默认目录为用户主目录，不是 P4V workspace。若只需登录补丁，可在启动前设置 `P4VPATCH_DISABLE_TERMINAL=1`。
+启动后选择 **View → Terminal**，或点击 Log/Dashboard 旁的 Terminal 标签。此标签是真正加入 P4V `UILogTabWidget` 的第三页，不是另一个 dock 或绘制的假标签。WebEngine/xterm.js 显示 ConPTY 的终端（默认为 `cmd.exe`）；打开时会聚焦输入，关闭标签的 × 只隐藏页面，重开继续使用同一进程。默认目录为用户主目录，不是 P4V workspace。若只需登录补丁，可在启动前设置 `P4VPATCH_DISABLE_TERMINAL=1`。
+
+**Patch 设置：** 打开 **Edit → Preferences → Patch**，在 **Terminal Shell** 中选择 `cmd.exe`（默认）、`pwsh`（从 PATH 查找），或使用 Browse 指定已有的 `pwsh.exe` 绝对路径。点击 P4V 原有的 **Apply/OK** 保存，**Cancel** 不保存。配置独立保存在 P4V 的 `ApplicationSettings.xml` 所在目录下的 `~/.p4qt/p4vpatch.ini`，不改写 P4V 的设置文件。已经打开的终端继续使用原有 shell，重新启动 P4V 后生效。
 
 **兼容性处理：** P4V 2026.2 私有的焦点回调不能处理外来标签页；直接调用 Qt `addTab` 会导致崩溃。补丁只在安装的 Qt **6.8.6** 中校验并替换 Qt6Widgets 对 `QMetaObject::activate` 的一项导入，使 Terminal 页面存在期间不触发 `QApplication::focusChanged`；其余应用信号保持不变。导入签名/版本不匹配时**不显示终端入口**，而不是冒险继续。退出 P4V 前会先分离外来页面，避免宿主析构时崩溃。已在真实 P4V 中重复测试：实际屏幕可见终端提示符和输入光标、输入执行、Log/Dashboard/Terminal 切换、关闭重开、空闲等待、File → Exit 和 Connection → Close Connection；本轮无新崩溃转储，也没有操作期间主窗口 Hide/Show。模拟测试不替代这些真实测试。
 
@@ -48,7 +50,7 @@ python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O .sdk --modul
 
 - 这是**尚未经过真实密码过期场景验证的运行时原型**。投入日常使用前，必须在测试环境核对弹窗控件结构、提示文本及确认按钮行为。
 - 注入代码运行在 P4V 进程内部，可能导致 P4V 崩溃。升级 P4V 或 Qt 后必须重新验证；DLL 会拒绝其他 Qt 运行时版本。不要注入无关进程。
-- 终端可以执行**当前用户权限下的任意命令**，仅加载 DLL 内嵌本地页面；不要用未知来源的 DLL。退出 P4V 会终止对应的 `cmd.exe`，但它自行启动的其他进程不保证一并退出。WebEngine/ConPTY 仍有依赖系统、权限、编码和终端程序的兼容风险；它并不保证与 Windows Terminal 功能完全相同。
+- 终端可以执行**当前用户权限下的任意命令**，仅加载 DLL 内嵌本地页面；不要用未知来源的 DLL。退出 P4V 会终止对应的 shell 进程，但它自行启动的其他进程不保证一并退出。WebEngine/ConPTY 仍有依赖系统、权限、编码和终端程序的兼容风险；它并不保证与 Windows Terminal 功能完全相同。
 - 密码会留在进程内存中直到进程退出；管理员或内存转储可以读取。Qt 内部可能复制字符串，因此擦除旧值也不能保证安全清除所有副本。如果组织策略禁止客户端在内存中保存密码，请勿使用。
 - MFA、SSO、密码过期、账户锁定或网络故障可能需要人工处理。三次自动尝试也可能导致账户被锁定。如 P4V 的控件或文案不同，补丁会跳过该弹窗，而不会猜测操作。
 - 启动器不会绕过 Windows 安全策略；禁止 DLL 注入的策略可能阻止其工作。请以相同的用户身份和权限级别运行启动器与 P4V。

@@ -1,4 +1,5 @@
 #include "terminal.h"
+#include "preferences.h"
 
 #include <windows.h>
 
@@ -51,6 +52,10 @@ protected:
             QTimer::singleShot(0, main, [weak] { if (weak) installTerminal(weak); });
         }
         auto* dialog = qobject_cast<QDialog*>(object);
+        if (dialog && std::strcmp(dialog->metaObject()->className(), "P4VPreferencesDialog") == 0) {
+            QPointer<QDialog> weak(dialog);
+            QTimer::singleShot(0, dialog, [weak] { if (weak) installPatchPreferences(weak); });
+        }
         if (!dialog || dialog->windowTitle() != QStringLiteral("Perforce Password Required"))
             return false;
         // Run after the application's Show event processing has finished.
@@ -206,6 +211,7 @@ DWORD WINAPI bootstrap(void*) {
                         installTerminal(main);
                     auto* dialog = qobject_cast<QDialog*>(widget);
                     if (dialog && dialog->isVisible()) {
+                        installPatchPreferences(dialog);
                         watcher->inspectVisible(dialog);
                     }
                 }
