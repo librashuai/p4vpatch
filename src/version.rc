@@ -1,0 +1,27 @@
+#include <windows.h>
+#include "version.h"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION P4VPATCH_VERSION_RESOURCE
+ PRODUCTVERSION P4VPATCH_VERSION_RESOURCE
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+ FILEFLAGS 0
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "p4vpatch contributors\0"
+            VALUE "FileDescription", "P4V Patch\0"
+            VALUE "FileVersion", P4VPATCH_VERSION "\0"
+            VALUE "ProductName", "P4V Patch\0"
+            VALUE "ProductVersion", P4VPATCH_VERSION "\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

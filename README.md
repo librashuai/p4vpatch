@@ -1,6 +1,6 @@
 # P4V 增强补丁（实验性）
 
-功能：自动重新登录，以及 **View → Terminal** 打开 Log/Dashboard 同组的原生终端标签。模拟主窗口测试见 [`tests/terminal-host/README.md`](tests/terminal-host/README.md)。
+功能：自动重新登录、**View → Terminal** 原生终端标签，以及复用 P4V Qt 运行时的 **GUI Launcher / GitHub Release 手动更新**。发现新版一定显示欢迎页，只有用户确认后才更新补丁。模拟主窗口测试见 [`tests/terminal-host/README.md`](tests/terminal-host/README.md)。
 
 适用于 Windows x64 上的 **P4V 2026.2 / Qt 6.8.6**。启动器启动 P4V，通过 `LoadLibraryW` 加载 `p4vpatch.dll`；DLL 在 Qt 应用中安装事件过滤器。**不会修改** P4V 可执行文件或其自带的 DLL。
 
@@ -20,15 +20,33 @@ python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O .sdk --modul
 # SDK 位于其他位置时：.\build.ps1 -QtSdk 'D:\Qt\6.8.3\msvc2022_64'
 ```
 
-生成文件：`build-msvc\p4vpatch.dll` 和 `build-msvc\p4vpatch-launcher.exe`。要双击启动，请将**这两个文件**复制到 `p4v.exe` 所在目录（例如 `C:\Apps\Perforce`），然后运行 `p4vpatch-launcher.exe`。不传参数时，启动器会运行其所在目录下的 `p4v.exe`。也可以将两个补丁文件放在一起，显式指定 P4V 路径：
+生成文件：`build-msvc\p4vpatch.dll` 和 `build-msvc\p4vpatch-launcher.exe`。请将**这两个文件**复制到 `p4v.exe` 所在目录（例如 `C:\Apps\Perforce`），然后双击 `p4vpatch-launcher.exe`。GUI Launcher 不弹控制台，使用 Launcher 同目录的 Qt DLL 和 `plugins`。开发测试时可将所需运行库/插件复制到 `build-msvc`，然后指定外部 P4V 路径；欢迎页也可通过“选择 P4V…”指定并记住路径，启动前会校验其 P4V/Qt 版本。找不到 P4V 不会阻止打开欢迎页。补丁始终读取/更新 **Launcher 旁边** 的 `p4vpatch.dll`，不会改写外部 P4V 目录里的补丁。
+
+首次显示欢迎页。可选择无更新时下次直接启动，但每次仍会检查 GitHub 最新稳定 Release；检测到新版必须回到欢迎页，由用户决定更新或继续使用旧版。只在线替换 DLL，不自动替换 Launcher EXE，不强制结束 P4V。网络检查失败可以继续使用当前版本。界面跟随 P4V 保存的浅色/深色主题和 UI 字体，优先复用安装目录的 QSS；路径、兼容性和网络诊断收纳在“详情”中，无新版时不显示空白更新说明。
 
 ```powershell
-& '.\build-msvc\p4vpatch-launcher.exe' 'C:\Apps\Perforce\p4v.exe'
+& 'C:\Apps\Perforce\p4vpatch-launcher.exe' --welcome
+# build-msvc 已准备好 Qt 运行库时，可直接测试外部 P4V：
+& '.\build-msvc\p4vpatch-launcher.exe' --welcome 'C:\Apps\Perforce\p4v.exe'
+# “--” 后面的参数传给默认 P4V（优先同目录，否则使用已保存的路径）：
+& 'C:\Apps\Perforce\p4vpatch-launcher.exe' -- -p server:1666 -u user
 ```
 
-显式指定可执行文件路径后，还可以继续传入 P4V 的命令行参数。启动前请退出所有已运行的 P4V：如果新进程将请求转交给现有实例，现有实例不会被注入补丁。
+启动/更新前请退出所有已运行的 P4V：现有实例不会被注入补丁，Launcher 会拒绝在任何 P4V 进程存在时操作。完整安装、恢复、打包和发布步骤见 **[GitHub Release 手册](docs/releases.md)**。
 
-启动器图标为 `assets/p4vpatch-launcher.ico`，由本机 P4V 可执行文件提取的图标（`assets/p4v-extracted.ico`）加上“+”标记生成。重新生成：先运行 `python -m pip install pefile pillow`，再在构建前运行 `python tools/make-icon.py 'C:\Apps\Perforce\p4v.exe'`。已在非 P4V 进程中使用 P4V 自带的 Qt 6.8.6 运行库成功加载 DLL；这只能验证导入依赖，**不能证明登录弹窗功能正常**。如果只需要编译启动器，可不安装 Qt SDK，使用 `cmake -S . -B build -DBUILD_PATCH=OFF`。
+启动器图标为 `assets/p4vpatch-launcher.ico`，由本机 P4V 可执行文件提取的图标（`assets/p4v-extracted.ico`）加上“+”标记生成。重新生成：先运行 `python -m pip install pefile pillow`，再在构建前运行 `python tools/make-icon.py 'C:\Apps\Perforce\p4v.exe'`。已在非 P4V 进程中使用 P4V 自带的 Qt 6.8.6 运行库成功加载 DLL；这只能验证导入依赖，**不能证明登录弹窗功能正常**。GUI Launcher 也需要 Qt MSVC SDK（Core/Widgets/Network）；只构建 Launcher 可设置 `-DBUILD_PATCH=OFF`，但不再提供无需 Qt 的纯 Win32 构建。
+
+## 打包和发布
+
+版本号统一维护于根目录 `VERSION`，同时写入 Launcher 和 DLL 的版本资源。
+
+```powershell
+.\tools\package-release.ps1                       # 生成 dist/v版本 下的四个 Release 资源
+.\tools\publish-release.ps1 -NotesFile release-notes.md  # 创建 GitHub 草稿
+# 显式加 -Publish 才会上传完成后公开，并标记 latest
+```
+
+发布前提交并 push 源码与说明；发布脚本要求干净工作区。具体参数、安全边界和发布检查表见 [docs/releases.md](docs/releases.md)。Launcher 离线测试见 [tests/launcher/README.md](tests/launcher/README.md)。
 
 ## 终端面板
 

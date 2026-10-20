@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/launcher">
+    <file alias="icon.ico">../assets/p4vpatch-launcher.ico</file>
+    <file alias="check.svg">../assets/launcher-check.svg</file>
+  </qresource>
+</RCC>
