@@ -56,6 +56,7 @@ void LauncherTheme::apply(QWidget& window, const QString& executable, const QStr
     const QString accent = dark ? "#3D8BFD" : "#1F6FEB";
     const QString hover = dark ? "#5A9DFF" : "#388BFD";
     const QString selected = dark ? "#264F78" : "#CCE0FF";
+    const QString error = dark ? "#FF7B72" : "#C62828";
     QPalette palette;
     palette.setColor(QPalette::Window, QColor(base));
     palette.setColor(QPalette::WindowText, QColor(text));
@@ -131,10 +132,14 @@ QTextEdit#releaseNotes { background: $surface; color: $text; border: 1px solid $
     border-radius: 6px; padding: 10px; selection-background-color: $accent; selection-color: white; }
 QProgressBar#activity { border: none; background: $border; max-height: 2px; min-height: 2px; }
 QProgressBar#activity::chunk { background: $accent; }
+QWidget#LauncherWindow QLabel#statusTitle[error="true"],
+QWidget#LauncherWindow QLabel#statusSummary[error="true"],
+QWidget#LauncherWindow QLabel#statusDiagnostic[error="true"],
+QWidget#LauncherWindow QMessageBox[error="true"] QLabel { color: $error; }
 )");
     for (const auto& pair : {qMakePair("$base", base), qMakePair("$surface", surface), qMakePair("$border", border),
          qMakePair("$text", text), qMakePair("$muted", muted), qMakePair("$disabled", disabled),
-         qMakePair("$accent", accent), qMakePair("$hover", hover), qMakePair("$selected", selected)})
+         qMakePair("$accent", accent), qMakePair("$hover", hover), qMakePair("$selected", selected), qMakePair("$error", error)})
         style.replace(QString::fromLatin1(pair.first), pair.second);
     window.setStyleSheet(style);
     // Match the light/dark client area without replacing the native Windows frame.

@@ -1,6 +1,6 @@
 # P4V 增强补丁（实验性）
 
-功能：自动重新登录、**View → Terminal** 原生终端标签，以及复用 P4V Qt 运行时的 **GUI Launcher / GitHub Release 手动更新**。发现新版一定显示欢迎页，只有用户确认后才更新补丁。模拟主窗口测试见 [`tests/terminal-host/README.md`](tests/terminal-host/README.md)。
+功能：自动重新登录、**View → Terminal** 原生终端标签、**Submitted Changelist 的 Jira 描述链接**，以及复用 P4V Qt 运行时的 **GUI Launcher / GitHub Release 手动更新**。发现新版一定显示欢迎页，只有用户确认后才更新补丁。模拟主窗口测试见 [`tests/terminal-host/README.md`](tests/terminal-host/README.md)。
 
 适用于 Windows x64 上的 **P4V 2026.2 / Qt 6.8.6**。启动器启动 P4V，通过 `LoadLibraryW` 加载 `p4vpatch.dll`；DLL 在 Qt 应用中安装事件过滤器。**不会修改** P4V 可执行文件或其自带的 DLL。
 
@@ -32,7 +32,7 @@ python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O .sdk --modul
 & 'C:\Apps\Perforce\p4vpatch-launcher.exe' -- -p server:1666 -u user
 ```
 
-启动/更新前请退出所有已运行的 P4V：现有实例不会被注入补丁，Launcher 会拒绝在任何 P4V 进程存在时操作。完整安装、恢复、打包和发布步骤见 **[GitHub Release 手册](docs/releases.md)**。
+启动支持 P4V 多开：已有 P4V 窗口或 P4VC 后台服务不会阻止再次启动；补丁只注入本次新建的进程，不追溯注入已有实例。**仅更新 DLL 前**要求退出所有 P4V，防止替换正在使用的补丁。P4VC 的 `p4v.exe -faceless` 后台服务可能在关闭窗口后继续运行；确认无需其窗口/任务后，可用 `p4v.exe -p4vc shutdown` 正常关闭服务。更新被拦截时详情列出 PID，补丁不会自动结束进程。Launcher 的检查、启动、下载和安装错误以红字显示，重试或恢复正常后还原颜色。完整安装、恢复、打包和发布步骤见 **[GitHub Release 手册](docs/releases.md)**。
 
 启动器图标为 `assets/p4vpatch-launcher.ico`，由本机 P4V 可执行文件提取的图标（`assets/p4v-extracted.ico`）加上“+”标记生成。重新生成：先运行 `python -m pip install pefile pillow`，再在构建前运行 `python tools/make-icon.py 'C:\Apps\Perforce\p4v.exe'`。已在非 P4V 进程中使用 P4V 自带的 Qt 6.8.6 运行库成功加载 DLL；这只能验证导入依赖，**不能证明登录弹窗功能正常**。GUI Launcher 也需要 Qt MSVC SDK（Core/Widgets/Network）；只构建 Launcher 可设置 `-DBUILD_PATCH=OFF`，但不再提供无需 Qt 的纯 Win32 构建。
 
@@ -57,6 +57,12 @@ python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O .sdk --modul
 **兼容性处理：** P4V 2026.2 私有的焦点回调不能处理外来标签页；直接调用 Qt `addTab` 会导致崩溃。补丁只在安装的 Qt **6.8.6** 中校验并替换 Qt6Widgets 对 `QMetaObject::activate` 的一项导入，使 Terminal 页面存在期间不触发 `QApplication::focusChanged`；其余应用信号保持不变。导入签名/版本不匹配时**不显示终端入口**，而不是冒险继续。退出 P4V 前会先分离外来页面，避免宿主析构时崩溃。已在真实 P4V 中重复测试：实际屏幕可见终端提示符和输入光标、输入执行、Log/Dashboard/Terminal 切换、关闭重开、空闲等待、File → Exit 和 Connection → Close Connection；本轮无新崩溃转储，也没有操作期间主窗口 Hide/Show。模拟测试不替代这些真实测试。
 
 **仍是针对特定 P4V/Qt 版本的非官方运行时补丁**，修改了 Qt DLL 在当前进程中的导入项。Terminal 页面存在期间，P4V 其他依赖应用级 `focusChanged` 信号的功能也可能受影响；P4V 升级、复杂布局切换及其他未覆盖的关闭途径仍可能不兼容。切勿在未保存的工作上首次试用。默认 DLL 为 `build-msvc\p4vpatch.dll`。
+
+## Submitted Changelist 的 Jira 链接
+
+在已提交 Changelist 的只读 Description 中，将 `[Jira]BR-339863` 中的 **BR-339863** 显示为带下划线的链接，点击通过系统默认浏览器打开 `https://jira.garena.com/browse/BR-339863`。规则为 `\[Jira\](BR-[0-9]+)\b`，区分大小写、支持多个编号和任意位数数字。
+
+直接增强原有 `markdownBrowser`，不替换控件或改变布局、不修改 Description/HTML、不向 Perforce 写数据。保留 Markdown、已有链接、选择、复制及右键菜单；拖选或 Shift 选择不打开链接。仅匹配已核实的 Submitted Changelist 窗口和只读控件，Pending/Submit 编辑区域不受影响。新增链接属于显示层增强，不新增原生“复制链接地址”菜单。已有语法高亮器时保守跳过。测试与边界见 [tests/changelist/README.md](tests/changelist/README.md)。
 
 ## 自动重新登录行为
 

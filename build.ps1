@@ -3,7 +3,8 @@ param(
     [string]$QtSdk = (Join-Path $PSScriptRoot '.sdk\6.8.3\msvc2022_64'),
     [string]$BuildDir = (Join-Path $PSScriptRoot 'build-msvc'),
     [string]$Repository = 'librashuai/p4vpatch',
-    [switch]$LauncherTests
+    [switch]$LauncherTests,
+    [switch]$ChangelistTests
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,7 +63,8 @@ if (-not (Test-Path (Join-Path $QtSdk 'lib\cmake\Qt6\Qt6Config.cmake'))) {
     throw "Qt 6.8.3 MSVC x64 SDK not found at $QtSdk. Pass -QtSdk <sdk-path>."
 }
 $testOption = if ($LauncherTests) { 'ON' } else { 'OFF' }
-& cmake -S $PSScriptRoot -B $BuildDir -G Ninja '-DCMAKE_BUILD_TYPE=Release' "-DCMAKE_PREFIX_PATH=$QtSdk" '-DBUILD_PATCH=ON' "-DP4VPATCH_REPOSITORY=$Repository" "-DBUILD_LAUNCHER_TESTS=$testOption"
+$changelistTestOption = if ($ChangelistTests) { 'ON' } else { 'OFF' }
+& cmake -S $PSScriptRoot -B $BuildDir -G Ninja '-DCMAKE_BUILD_TYPE=Release' "-DCMAKE_PREFIX_PATH=$QtSdk" '-DBUILD_PATCH=ON' "-DP4VPATCH_REPOSITORY=$Repository" "-DBUILD_LAUNCHER_TESTS=$testOption" "-DBUILD_CHANGELIST_TESTS=$changelistTestOption"
 if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed ($LASTEXITCODE)" }
 & cmake --build $BuildDir --config Release
 if ($LASTEXITCODE -ne 0) { throw "Build failed ($LASTEXITCODE)" }

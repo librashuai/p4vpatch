@@ -126,7 +126,7 @@ bool parseManifest(const QByteArray& json, const Release& release, Manifest& man
 bool p4vIsRunning(QString& error) {
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
-        error = QStringLiteral("Cannot enumerate processes; update/start cancelled for safety.");
+        error = QStringLiteral("Cannot enumerate processes; update cancelled for safety.");
         return true;
     }
     PROCESSENTRY32W entry{sizeof(entry)};
@@ -137,7 +137,8 @@ bool p4vIsRunning(QString& error) {
     } else {
         do {
             if (_wcsicmp(entry.szExeFile, L"p4v.exe") == 0) {
-                error = QStringLiteral("Please close all P4V windows before starting or updating the patch. No process will be terminated.");
+                error = QStringLiteral("检测到 P4V 进程（PID %1）。请退出所有 P4V 窗口及 P4VC 后台服务后再更新补丁；关闭窗口后后台服务仍可能运行。补丁不会自动终止进程。")
+                    .arg(entry.th32ProcessID);
                 busy = true;
                 break;
             }

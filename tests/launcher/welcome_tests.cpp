@@ -5,6 +5,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
+#include <QElapsedTimer>
+#include <QProcess>
+#include <QThread>
+#include <atomic>
 #include <iostream>
 
 namespace {
@@ -23,6 +27,21 @@ QString labels(QWidget& window) {
     return result;
 }
 void events() { for (int i = 0; i < 10; ++i) QApplication::processEvents(); }
+bool errorColors(QWidget& window, bool expected) {
+    const QColor red(window.property("p4vDarkTheme").toBool() ? "#FF7B72" : "#C62828");
+    for (const auto* name : {"statusTitle", "statusSummary", "statusDiagnostic"}) {
+        auto* label = window.findChild<QLabel*>(QString::fromLatin1(name));
+        if (!label || label->property("error").toBool() != expected ||
+            (label->palette().color(QPalette::WindowText) == red) != expected) return false;
+    }
+    return true;
+}
+bool waitFor(const std::function<bool()>& condition) {
+    QElapsedTimer timer;
+    timer.start();
+    while (!condition() && timer.elapsed() < 3000) { events(); QThread::msleep(1); }
+    return condition();
+}
 QList<QRect> geometries(std::initializer_list<QWidget*> widgets) {
     QList<QRect> result;
     for (auto* widget : widgets) result.append(QRect(widget->mapToGlobal(QPoint()), widget->size()));
@@ -81,7 +100,7 @@ int main(int argc, char** argv) {
         check(window.isVisible() && labels(window).contains("9.0.0"), "cached new release still interrupts auto-start when offline");
     }
     failRequest = false;
-    if (app.arguments().size() != 2 || !QFile::copy(app.arguments()[1], exe)) return 2;
+    if (app.arguments().size() != 3 || !QFile::copy(app.arguments()[1], exe)) return 2;
     for (const auto* name : {L"Qt6Core.dll", L"Qt6Gui.dll", L"Qt6Widgets.dll"}) {
         wchar_t path[32768]{};
         if (!GetModuleFileNameW(GetModuleHandleW(name), path, 32768) ||
@@ -178,10 +197,12 @@ int main(int argc, char** argv) {
         pending({}, "https://api.github.com/very/long/request failed (HTTP 403)");
         events();
         check(activity->isHidden() && pageGeometry() == checkingGeometry, "hiding progress preserves window and surrounding layout");
+        check(errorColors(window, true), "network error title, summary and diagnostic are red");
         const auto idleGeometry = pageGeometry();
         button(window, QStringLiteral("检查更新"))->click();
         events();
         check(activity->isVisible() && pageGeometry() == idleGeometry, "showing progress preserves window and surrounding layout");
+        check(errorColors(window, false), "retry clears previous error coloring");
         pending({}, "https://api.github.com/very/long/request failed (HTTP 403)");
         events();
         check(details->isHidden() && !window.findChild<QTextEdit*>()->isVisible(), "default page collapses diagnostics and empty release notes");
@@ -225,6 +246,7 @@ int main(int argc, char** argv) {
         preview.apply(window, exe, config);
         events();
         check(window.property("p4vDarkTheme").toBool() && window.palette().color(QPalette::Window).name() == "#1e1f22", "dark fallback matches P4V palette");
+        check(errorColors(window, true), "dark theme uses readable red error text");
         if (!snapshots.isEmpty()) window.grab().save(QDir(snapshots).filePath("launcher-dark.png"));
         appearance.open(QIODevice::WriteOnly | QIODevice::Truncate);
         appearance.write("<Settings><Bool varName=\"DarkTheme\">false</Bool></Settings>");
@@ -238,6 +260,7 @@ int main(int argc, char** argv) {
         preview.apply(window, exe, config);
         check(preview.loadedP4vSkin() && window.styleSheet().contains("border-radius: 17px") &&
               !window.property("p4vDarkTheme").toBool(), "reuse the selected P4V skin at runtime");
+        check(errorColors(window, true), "light P4V skin preserves red error text");
         appearance.open(QIODevice::WriteOnly | QIODevice::Truncate);
         appearance.write("<Settings><Bool varName=\"DarkTheme\">true</Bool>");
         appearance.close();
@@ -252,9 +275,92 @@ int main(int argc, char** argv) {
                 preview.apply(window, installedP4v, config);
                 events();
                 check(preview.loadedP4vSkin(), "installed P4V skin loaded without copying theme assets");
+                check(errorColors(window, true), "installed P4V skins preserve red error text");
                 if (!snapshots.isEmpty()) window.grab().save(QDir(snapshots).filePath(dark ? "launcher-p4v-dark.png" : "launcher-p4v-light.png"));
             }
         }
+    }
+    settings.clear();
+    {
+        WelcomeWindow::FetchCallback pending;
+        WelcomeWindow window(exe, {}, true, [&](const QUrl&, qint64, WelcomeWindow::FetchCallback callback) { pending = std::move(callback); }, patch);
+        events();
+        pending({}, "synthetic network failure");
+        events();
+        check(errorColors(window, true), "failed check enters error state");
+        button(window, QStringLiteral("检查更新"))->click();
+        events();
+        QJsonObject current{{"tag_name", QStringLiteral("v" P4VPATCH_VERSION)}, {"draft", false}, {"prerelease", false},
+            {"html_url", base + QStringLiteral("tag/v" P4VPATCH_VERSION)}, {"assets", QJsonArray()}};
+        pending(QJsonDocument(current).toJson(), {});
+        events();
+        check(errorColors(window, false), "successful check restores normal text colors");
+        button(window, QStringLiteral("启动 P4V"))->click(); // Incompatible inert fixture, never launched.
+        events();
+        check(errorColors(window, true) && window.findChild<QWidget*>("launcherDetails")->isVisible(),
+              "launch preflight error is red and exposes details");
+    }
+    if (QString::fromLatin1(qVersion()) == QStringLiteral(P4VPATCH_QT_VERSION)) {
+        if (!QFile::remove(exe) || !QFile::copy(app.arguments()[2], exe)) return 2;
+        QProcess existing;
+        existing.start(app.arguments()[2], QStringList()); // Only this sleeping mock process is created/ended.
+        if (!existing.waitForStarted()) return 2;
+        QString runningError;
+        check(p4vIsRunning(runningError), "windowless mock P4V is running during multi-instance launch test");
+        std::atomic<int> launches{0};
+        auto launch = [&](const QString&, const QString&, const QStringList&) {
+            ++launches;
+            return LaunchResult{false, "synthetic launch failure"}; // No process launch, injection or app quit.
+        };
+        auto offline = [](const QUrl&, qint64, WelcomeWindow::FetchCallback callback) { callback({}, "offline"); };
+        WelcomeWindow first(exe, {}, true, offline, patch, launch);
+        events();
+        button(first, QStringLiteral("启动 P4V"))->click();
+        check(waitFor([&] { return first.findChild<QLabel*>("statusTitle")->text() == QStringLiteral("启动未完成"); }) && launches == 1,
+              "existing P4V process does not prevent launch handler execution");
+        check(errorColors(first, true), "asynchronous launch failure is red");
+        WelcomeWindow second(exe, {}, true, offline, patch, launch);
+        events();
+        button(second, QStringLiteral("启动 P4V"))->click();
+        check(waitFor([&] { return second.findChild<QLabel*>("statusTitle")->text() == QStringLiteral("启动未完成"); }) && launches == 2,
+              "another welcome window can request another P4V launch while existing process stays alive");
+        WelcomeWindow updateWindow(exe, {}, true, [&](const QUrl& url, qint64, WelcomeWindow::FetchCallback callback) {
+            if (url == latestReleaseUrl()) callback(QJsonDocument(release).toJson(), {});
+            else {
+                QJsonObject manifest{{"schema", 1}, {"version", "9.0.0"}, {"minimum_launcher_version", QStringLiteral(P4VPATCH_VERSION)},
+                    {"p4v_version", QStringLiteral(P4VPATCH_P4V_VERSION)}, {"qt_version", QStringLiteral(P4VPATCH_QT_VERSION)},
+                    {"dll", QJsonObject{{"url", base + "download/v9.0.0/p4vpatch.dll"}, {"size", 100}, {"sha256", QString(64, 'a')}}}};
+                callback(QJsonDocument(manifest).toJson(), {});
+            }
+        }, patch, launch);
+        events();
+        check(button(updateWindow, QStringLiteral("更新补丁"))->isEnabled(), "compatible fixture offers manual update");
+        bool dialogChecked = false;
+        QTimer::singleShot(0, &updateWindow, [&] {
+            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            if (!dialog) return;
+            auto* message = dialog->findChild<QLabel*>(QStringLiteral("qt_msgbox_label"));
+            const QColor red(updateWindow.property("p4vDarkTheme").toBool() ? "#FF7B72" : "#C62828");
+            dialogChecked = message && dialog->property("error").toBool() && message->palette().color(QPalette::WindowText) == red;
+            dialog->accept();
+        });
+        button(updateWindow, QStringLiteral("更新补丁"))->click();
+        check(dialogChecked && errorColors(updateWindow, true), "running P4V still blocks DLL update with red status and dialog text");
+        existing.kill(); // This handle belongs to our inert fixture, never a real P4V.
+        existing.waitForFinished();
+    } else std::cout << "SKIP multi-instance preflight requires P4V Qt " P4VPATCH_QT_VERSION " runtime\n";
+    {
+        bool dialogChecked = false;
+        QTimer::singleShot(0, &app, [&] {
+            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            if (!dialog) return;
+            auto* message = dialog->findChild<QLabel*>(QStringLiteral("qt_msgbox_label"));
+            const QColor red(QApplication::palette().color(QPalette::Window).lightness() < 128 ? "#FF7B72" : "#C62828");
+            dialogChecked = message && message->palette().color(QPalette::WindowText) == red;
+            dialog->accept();
+        });
+        showLauncherError(nullptr, QStringLiteral("synthetic startup failure"), QStringLiteral("synthetic diagnostic"));
+        check(dialogChecked, "early startup error dialog without a welcome window is also red");
     }
     settings.clear();
     std::cout << failures << " failure(s)\n";

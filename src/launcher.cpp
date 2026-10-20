@@ -14,6 +14,7 @@
 #include <QFrame>
 #include <QProgressBar>
 #include <QStyleFactory>
+#include <QStyle>
 #include <QToolButton>
 #include <QLabel>
 #include <QLockFile>
@@ -40,15 +41,25 @@
 namespace {
 using namespace launcher;
 
+void showLauncherError(QWidget* parent, const QString& title, const QString& message, QMessageBox::Icon icon = QMessageBox::Warning) {
+    QMessageBox dialog(icon, title, message, QMessageBox::Ok, parent);
+    dialog.setProperty("error", true);
+    // Early startup errors have no themed welcome window to inherit a stylesheet from.
+    if (!parent) dialog.setStyleSheet(QApplication::palette().color(QPalette::Window).lightness() < 128
+        ? QStringLiteral("QLabel { color: #FF7B72; }") : QStringLiteral("QLabel { color: #C62828; }"));
+    dialog.exec();
+}
+
 class WelcomeWindow : public QWidget {
 public:
     using FetchCallback = std::function<void(QByteArray, QString)>;
     using FetchHandler = std::function<void(const QUrl&, qint64, FetchCallback)>;
-    WelcomeWindow(QString exe, QStringList arguments, bool forceWelcome, FetchHandler fetchHandler = {}, QString patchPath = {})
+    using LaunchHandler = std::function<LaunchResult(const QString&, const QString&, const QStringList&)>;
+    WelcomeWindow(QString exe, QStringList arguments, bool forceWelcome, FetchHandler fetchHandler = {}, QString patchPath = {}, LaunchHandler launchHandler = {})
         : exe_(std::move(exe)), arguments_(std::move(arguments)),
           dll_(patchPath.isEmpty() ? QCoreApplication::applicationDirPath() + "/p4vpatch.dll" : std::move(patchPath)),
           settings_(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/launcher.ini", QSettings::IniFormat),
-          fetchHandler_(std::move(fetchHandler)) {
+          fetchHandler_(std::move(fetchHandler)), launchHandler_(std::move(launchHandler)) {
         if (exe_.isEmpty()) {
             const QString adjacent = QCoreApplication::applicationDirPath() + "/p4v.exe";
             const QString saved = settings_.value("p4vExecutable").toString();
@@ -159,6 +170,7 @@ public:
         detailLabel(QStringLiteral("补丁路径：%1").arg(QDir::toNativeSeparators(dll_)));
         detailLabel(QStringLiteral("支持 P4V " P4VPATCH_P4V_VERSION " / Qt " P4VPATCH_QT_VERSION " · Windows x64"));
         diagnostic_ = detailLabel();
+        diagnostic_->setObjectName(QStringLiteral("statusDiagnostic"));
         details_->hide();
         layout->addWidget(details_);
         connect(detailsToggle_, &QToolButton::toggled, this, [this](bool expanded) {
@@ -286,12 +298,18 @@ private:
         layout()->activate();
         resize(width(), sizeHint().height());
     }
-    void showStatus(const QString& title, const QString& summary, const QString& detail = {}) {
+    void showStatus(const QString& title, const QString& summary, const QString& detail = {}, bool isError = false) {
         statusTitle_->setText(title);
         status_->setText(summary);
         status_->setVisible(!summary.isEmpty());
         diagnostic_->setText(detail);
         diagnostic_->setVisible(!detail.isEmpty());
+        for (auto* label : {statusTitle_, status_, diagnostic_}) {
+            label->setProperty("error", isError);
+            label->style()->unpolish(label);
+            label->style()->polish(label);
+            label->update();
+        }
     }
     void refreshVersion() {
         installed_ = fileVersion(dll_);
@@ -326,12 +344,12 @@ private:
             resizeForContent();
         }
     }
-    void finishCheck(bool startup, const QString& message, const QString& summary = {}) {
+    void finishCheck(bool startup, const QString& message, const QString& summary = {}, bool isError = false) {
         const bool found = QFileInfo(exe_).isFile();
         showStatus(hasNewRelease_ ? QStringLiteral("发现新版本 %1").arg(release_.version)
                                  : (found ? QStringLiteral("准备就绪") : QStringLiteral("选择 P4V")),
                    found || hasNewRelease_ ? (summary.isEmpty() ? message : summary)
-                                          : QStringLiteral("选择已安装的 P4V，即可开始。"), message);
+                                          : QStringLiteral("选择已安装的 P4V，即可开始。"), message, isError);
         setBusy(false);
         // New releases always interrupt auto-start, including manifest failures and launcher-only updates.
         if (startup && autoStart_ && !hasNewRelease_) startP4v();
@@ -343,9 +361,9 @@ private:
         // Do not forget a previously detected release on a retry/network failure.
         showStatus(QStringLiteral("正在检查更新"), QStringLiteral("正在连接 GitHub…"));
         fetch(latestReleaseUrl(), 1024 * 1024, [this, startup](QByteArray bytes, QString error) {
-            if (!error.isEmpty()) { finishCheck(startup, checkFailure(error), QStringLiteral("暂时无法检查更新，可稍后重试。")); return; }
+            if (!error.isEmpty()) { finishCheck(startup, checkFailure(error), QStringLiteral("暂时无法检查更新，可稍后重试。"), true); return; }
             Release candidate;
-            if (!parseRelease(bytes, candidate, error)) { finishCheck(startup, checkFailure(error), QStringLiteral("暂时无法检查更新，可稍后重试。")); return; }
+            if (!parseRelease(bytes, candidate, error)) { finishCheck(startup, checkFailure(error), QStringLiteral("暂时无法检查更新，可稍后重试。"), true); return; }
             release_ = candidate;
             settings_.setValue("latestReleaseJson", bytes);
             settings_.sync();
@@ -365,13 +383,13 @@ private:
             fetch(release_.manifest, 64 * 1024, [this, startup](QByteArray data, QString failure) {
                 if (!failure.isEmpty() || !parseManifest(data, release_, manifest_, failure)) {
                     finishCheck(startup, QStringLiteral("发现新版 %1，但无法读取更新清单：%2\n可打开 Release 手动下载。").arg(release_.version, failure),
-                                QStringLiteral("更新信息暂不可用，可打开 Release 手动下载。"));
+                                QStringLiteral("更新信息暂不可用，可打开 Release 手动下载。"), true);
                     return;
                 }
                 if (newerVersion(manifest_.minimumLauncher, QStringLiteral(P4VPATCH_VERSION))) {
                     finishCheck(startup, QStringLiteral("发现新版 %1，需要 Launcher %2 或以上。请打开 Release 下载完整 ZIP，退出后手动替换两个文件。")
                         .arg(release_.version, manifest_.minimumLauncher),
-                        QStringLiteral("需要 Launcher %1 或以上，请下载完整安装包。").arg(manifest_.minimumLauncher));
+                        QStringLiteral("需要 Launcher %1 或以上，请下载完整安装包。").arg(manifest_.minimumLauncher), true);
                     return;
                 }
                 QString compatibilityError;
@@ -379,7 +397,7 @@ private:
                     !compatibleP4v(exe_, manifest_.p4vVersion, manifest_.qtVersion, compatibilityError)) {
                     finishCheck(startup, QStringLiteral("发现新版 %1，但它要求 P4V %2 / Qt %3，与所选安装不兼容；禁止安装。\n%4")
                         .arg(release_.version, manifest_.p4vVersion, manifest_.qtVersion, compatibilityError),
-                        QStringLiteral("更新需要 P4V %1 / Qt %2，请检查所选安装。").arg(manifest_.p4vVersion, manifest_.qtVersion));
+                        QStringLiteral("更新需要 P4V %1 / Qt %2，请检查所选安装。").arg(manifest_.p4vVersion, manifest_.qtVersion), true);
                     return;
                 }
                 canUpdate_ = newerVersion(manifest_.version, installed_.isEmpty() ? "0.0.0" : installed_);
@@ -404,7 +422,11 @@ private:
     void updatePatch() {
         if (!canUpdate_ || busy_) return;
         QString error;
-        if (p4vIsRunning(error)) { QMessageBox::warning(this, QStringLiteral("无法更新"), error); return; }
+        if (p4vIsRunning(error)) {
+            showStatus(QStringLiteral("暂时无法更新"), QStringLiteral("请先退出 P4V，再更新补丁。"), error, true);
+            showLauncherError(this, QStringLiteral("无法更新"), error);
+            return;
+        }
         if (QMessageBox::question(this, QStringLiteral("确认更新"),
             QStringLiteral("下载并安装补丁 %1？\n旧版保留为 p4vpatch.dll.bak。不会自动升级 Launcher，也不会自动启动 P4V。")
                 .arg(manifest_.version)) != QMessageBox::Yes) return;
@@ -412,7 +434,7 @@ private:
         showStatus(QStringLiteral("正在下载更新"), QStringLiteral("完成后会保留旧版备份。"));
         fetch(manifest_.dllUrl, manifest_.size, [this](QByteArray bytes, QString error) {
             if (!error.isEmpty()) {
-                showStatus(QStringLiteral("下载未完成"), QStringLiteral("当前补丁未更改，可稍后重试。"), error);
+                showStatus(QStringLiteral("下载未完成"), QStringLiteral("当前补丁未更改，可稍后重试。"), error, true);
                 setBusy(false);
                 return;
             }
@@ -429,8 +451,8 @@ private:
                     canUpdate_ = false;
                     showStatus(QStringLiteral("更新完成"), QStringLiteral("启动 P4V，即可使用新版补丁。"));
                 } else {
-                    showStatus(QStringLiteral("更新未完成"), QStringLiteral("请展开详情查看原因。"), result.message);
-                    QMessageBox::warning(this, QStringLiteral("更新失败"), result.message);
+                    showStatus(QStringLiteral("更新未完成"), QStringLiteral("请展开详情查看原因。"), result.message, true);
+                    showLauncherError(this, QStringLiteral("更新失败"), result.message);
                 }
                 setBusy(false);
             });
@@ -441,10 +463,10 @@ private:
         QString error;
         if (!QFileInfo(dll_).isFile()) error = QStringLiteral("找不到 Launcher 旁的 p4vpatch.dll，请先安装或更新补丁。");
         else if (QString::fromLatin1(qVersion()) != QStringLiteral(P4VPATCH_QT_VERSION)) error = QStringLiteral("不支持当前 Qt 版本，仅支持 Qt " P4VPATCH_QT_VERSION "。");
-        else if (compatibleP4v(exe_, QStringLiteral(P4VPATCH_P4V_VERSION), QStringLiteral(P4VPATCH_QT_VERSION), error)) p4vIsRunning(error);
+        else compatibleP4v(exe_, QStringLiteral(P4VPATCH_P4V_VERSION), QStringLiteral(P4VPATCH_QT_VERSION), error);
         if (!error.isEmpty()) {
             show();
-            showStatus(QStringLiteral("暂时无法启动"), QStringLiteral("请检查 P4V 选择及兼容性。"), error);
+            showStatus(QStringLiteral("暂时无法启动"), QStringLiteral("请检查 P4V 选择及兼容性。"), error, true);
             detailsToggle_->setChecked(true);
             return;
         }
@@ -456,11 +478,14 @@ private:
         const auto exe = exe_;
         const auto dll = dll_;
         const auto arguments = arguments_;
-        runWorker([exe, dll, arguments] { return launchP4v(exe, dll, arguments); }, [this](LaunchResult result) {
+        // Existing P4V windows/services do not prevent creating another patched instance.
+        runWorker([exe, dll, arguments, launch = launchHandler_] {
+            return launch ? launch(exe, dll, arguments) : launchP4v(exe, dll, arguments);
+        }, [this](LaunchResult result) {
             if (result.ok) QCoreApplication::quit();
             else {
                 show();
-                showStatus(QStringLiteral("启动未完成"), QStringLiteral("请展开详情查看原因。"), result.message);
+                showStatus(QStringLiteral("启动未完成"), QStringLiteral("请展开详情查看原因。"), result.message, true);
                 detailsToggle_->setChecked(true);
                 setBusy(false);
             }
@@ -474,6 +499,7 @@ private:
     QSettings settings_;
     QNetworkAccessManager network_;
     FetchHandler fetchHandler_;
+    LaunchHandler launchHandler_;
     LauncherTheme theme_;
     Release release_;
     Manifest manifest_;
@@ -531,14 +557,14 @@ int main(int argc, char* argv[]) {
     if (!args.isEmpty() && args.first() == "--") args.removeFirst();
     const QString lockDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     if (!QDir().mkpath(lockDir)) {
-        QMessageBox::critical(nullptr, QStringLiteral("P4V Patch"), QStringLiteral("无法创建 Launcher 配置目录。"));
+        showLauncherError(nullptr, QStringLiteral("P4V Patch"), QStringLiteral("无法创建 Launcher 配置目录。"), QMessageBox::Critical);
         return 2;
     }
     const auto key = QCryptographicHash::hash(QDir(QCoreApplication::applicationDirPath()).canonicalPath().toLower().toUtf8(), QCryptographicHash::Sha256).toHex();
     QLockFile lock(lockDir + '/' + QString::fromLatin1(key) + ".lock");
     lock.setStaleLockTime(0);
     if (!lock.tryLock(0)) {
-        QMessageBox::warning(nullptr, QStringLiteral("P4V Patch"), QStringLiteral("此安装目录已有 Launcher 运行，请先关闭原窗口。"));
+        showLauncherError(nullptr, QStringLiteral("P4V Patch"), QStringLiteral("此安装目录已有 Launcher 运行，请先关闭原窗口。"));
         return 2;
     }
     WelcomeWindow window(exe, args, forceWelcome);

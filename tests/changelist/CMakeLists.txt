@@ -1,0 +1,5 @@
+find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Test)
+add_executable(changelist-tests changelist_tests.cpp ../../src/changelist_links.cpp)
+target_link_libraries(changelist-tests PRIVATE Qt6::Widgets Qt6::Test)
+add_test(NAME changelist-links COMMAND changelist-tests)
+set_tests_properties(changelist-links PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

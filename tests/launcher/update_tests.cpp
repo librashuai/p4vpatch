@@ -129,6 +129,8 @@ int main(int argc, char** argv) {
     check(started, "start test-owned dummy p4v process");
     if (started) {
         check(p4vIsRunning(error), "detect running P4V by process name");
+        check(error.contains(QString::number(process.dwProcessId)) && error.contains(QStringLiteral("后台服务")),
+              "windowless P4V blocker reports PID and background service guidance");
         check(!installPatch(target, bytes, manifest, error) && read(target) == bytes, "running P4V blocks replacement");
         // Only terminate the mock process whose handle we just created, never a real P4V.
         TerminateProcess(process.hProcess, 0);

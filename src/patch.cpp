@@ -1,6 +1,7 @@
 #include "terminal.h"
 #include "preferences.h"
 #include "background_login.h"
+#include "changelist_links.h"
 
 #include <windows.h>
 
@@ -375,6 +376,7 @@ DWORD WINAPI bootstrap(void*) {
                 // Keep the watcher on the GUI thread for the app's lifetime.
                 auto* watcher = new PasswordWatcher(app);
                 app->installEventFilter(watcher);
+                installChangelistLinks(app);
                 // Cover a dialog that appeared between startup and injection.
                 for (auto* widget : QApplication::topLevelWidgets()) {
                     if (auto* main = qobject_cast<QMainWindow*>(widget))
