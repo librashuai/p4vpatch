@@ -1,5 +1,6 @@
 #include "terminal.h"
 #include "preferences.h"
+#include "background_login.h"
 
 #include <windows.h>
 
@@ -12,6 +13,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QEvent>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QLabel>
 #include <QLineEdit>
@@ -27,16 +29,29 @@
 namespace {
 // Deliberately fail closed if a different P4V/Qt build is installed.
 constexpr const char* kQtVersion = "6.8.6";
-constexpr int kMaxAttempts = 3;
+constexpr int kMaxRetries = 3; // one initial automatic submission, then three retries
+constexpr int kRetryDelayMs = 10000;
 
 struct Credential {
     QString password;
-    int submissions = 0;
+    int submissions = 0; // since the last confirmed dialog acceptance or manual Save
+    QElapsedTimer lastSubmission;
+    QPointer<QDialog> pendingDialog;
+    bool pending = false;
+    bool accepted = false;
+    bool retryScheduled = false;
+    quint64 serial = 0; // invalidate callbacks from an earlier attempt/Save
+    quint64 backgroundSerial = 0;
+    QPointer<BackgroundLogin> background;
 };
 
 class PasswordWatcher final : public QObject {
 public:
     explicit PasswordWatcher(QObject* parent) : QObject(parent) {}
+
+    ~PasswordWatcher() override {
+        for (auto& entry : saved_) entry.password.fill(QChar('\0'));
+    }
 
     void inspectVisible(QDialog* dialog) {
         if (dialog->isVisible() &&
@@ -114,6 +129,76 @@ private:
         return nullptr; // do not call accept(): that could bypass P4V validation
     }
 
+    void prepareBackgroundLogin(QDialog* dialog, const QString& key) {
+        auto& entry = saved_[key];
+        if (entry.background) {
+            entry.background->cancelCommand();
+            entry.background->deleteLater();
+            entry.background = nullptr;
+        }
+        const quint64 generation = ++entry.backgroundSerial;
+        const auto connection = parseLoginPrompt(key);
+        const auto options = backgroundLoginOptions();
+        QPointer<QMainWindow> owner;
+        for (QWidget* widget = dialog->parentWidget(); widget; widget = widget->parentWidget()) {
+            if (auto* main = qobject_cast<QMainWindow*>(widget)) {
+                if (std::strcmp(main->metaObject()->className(), "UIWorkspace2") == 0) {
+                    owner = main;
+                    break;
+                }
+            }
+        }
+        if (!connection || !owner || owner->windowTitle().isEmpty()) {
+            noteBackgroundLogin("disabled-unverified-prompt-or-window");
+            return;
+        }
+        if (!options) return;
+        const QString title = owner->windowTitle();
+        auto* background = new BackgroundLogin(*options, *connection,
+            [this, key, generation, owner, title] {
+                auto current = saved_.find(key);
+                if (current == saved_.end() || current->backgroundSerial != generation ||
+                    current->pending || !owner || !owner->isVisible() ||
+                    owner->windowTitle() != title) return false;
+                // Respect manual edits, including challenges that appeared while p4.exe ran.
+                for (auto* widget : QApplication::topLevelWidgets()) {
+                    auto* challenge = qobject_cast<QDialog*>(widget);
+                    if (challenge && challenge->isVisible() &&
+                        challenge->windowTitle() == QStringLiteral("Perforce Password Required") &&
+                        connectionKey(challenge) == key) return false;
+                }
+                return true;
+            },
+            [this, key, generation](QString& password) {
+                auto current = saved_.find(key);
+                if (current == saved_.end() || current->backgroundSerial != generation ||
+                    current->pending || current->retryScheduled || current->password.isEmpty() ||
+                    current->submissions >= kMaxRetries + 1 ||
+                    (current->lastSubmission.isValid() &&
+                     current->lastSubmission.elapsed() < kRetryDelayMs)) return false;
+                for (QChar c : current->password)
+                    if (c.unicode() < 32 || c.unicode() > 126) return false;
+                ++current->submissions; // GUI and background share a single retry budget.
+                current->lastSubmission.start();
+                ++current->serial;
+                password = current->password;
+                return true;
+            },
+            [this, key, generation] {
+                auto current = saved_.find(key);
+                if (current == saved_.end() || current->backgroundSerial != generation || current->pending)
+                    return;
+                current->submissions = 0;
+                current->lastSubmission.invalidate();
+            }, this);
+        entry.background = background;
+        QPointer<BackgroundLogin> weak(background);
+        connect(dialog, &QDialog::accepted, background, [weak] {
+            // Allow P4V to finish its ticket write. Rejected/hidden dialogs do not arm it.
+            if (weak) QTimer::singleShot(1000, weak, [weak] { if (weak) weak->arm(); });
+        });
+    }
+
     void inspect(QDialog* dialog) {
         QString key = connectionKey(dialog);
         QLineEdit* field = passwordField(dialog);
@@ -132,16 +217,23 @@ private:
             }
             if (save) {
                 save->setAutoDefault(false);
-                save->setToolTip(QStringLiteral("Remember this password only until P4V exits"));
+                save->setToolTip(QStringLiteral("Remember this password only until P4V exits.\n"
+                    "Background ticket renewal requires a verified shared ticket file."));
                 QPointer<QLineEdit> weakField(field);
                 QPointer<QAbstractButton> weakSubmit(submitButton(dialog));
-                connect(save, &QPushButton::clicked, dialog, [this, key, weakField, weakSubmit] {
+                connect(save, &QPushButton::clicked, dialog, [this, key, weakField, weakSubmit, dialog] {
                     if (!weakField || weakField->text().isEmpty() ||
                         !weakSubmit || !weakSubmit->isEnabled()) return;
                     auto& entry = saved_[key];
                     if (!entry.password.isEmpty()) entry.password.fill(QChar('\0'));
                     entry.password = weakField->text();
-                    entry.submissions = 0; // explicit user action resets the automatic limit
+                    entry.submissions = 0;
+                    entry.pending = false;
+                    entry.accepted = false;
+                    entry.retryScheduled = false;
+                    entry.lastSubmission.invalidate();
+                    ++entry.serial;
+                    prepareBackgroundLogin(dialog, key);
                     // Use P4V's existing OK handler, never QDialog::accept().
                     weakSubmit->click();
                 });
@@ -154,28 +246,106 @@ private:
 
     void tryAutomatic(QDialog* dialog, const QString& key, QLineEdit* field) {
         auto it = saved_.find(key);
-        if (it == saved_.end() || it->password.isEmpty() || it->submissions >= kMaxAttempts)
-            return;
+        if (it == saved_.end() || it->password.isEmpty()) return;
+        if (it->background) {
+            // Do not submit the same password concurrently via CLI and the GUI.
+            const bool authenticating = it->background->isAuthenticating();
+            it->background->cancelCommand();
+            if (authenticating) {
+                QPointer<QDialog> weak(dialog);
+                QTimer::singleShot(100, this, [this, weak] {
+                    if (weak && weak->isVisible()) inspect(weak);
+                });
+                return;
+            }
+        }
+        if (it->retryScheduled) {
+            // A new Show may have replaced the dialog targeted by the timer.
+            it->retryScheduled = false;
+            ++it->serial;
+        }
+        if (it->pending) {
+            if (it->pendingDialog == dialog) {
+                // A duplicate Show is not a failed submission. A visible error
+                // on the same dialog is; the retry still observes the cooldown.
+                if (!invalidPassword(dialog)) return;
+            }
+            // P4V can replace the rejected dialog with a new instance.
+            it->pending = false;
+            it->accepted = false;
+            ++it->serial;
+        }
+        if (it->submissions >= kMaxRetries + 1) return;
+        // Do not overwrite a password the user has started editing.
+        if (!field->text().isEmpty() && field->text() != it->password) return;
         QAbstractButton* submit = submitButton(dialog);
         if (!submit || !submit->isEnabled()) return;
-        // Increment before clicking: click() can synchronously open a new dialog.
+
+        if (it->lastSubmission.isValid() && it->lastSubmission.elapsed() < kRetryDelayMs) {
+            if (it->retryScheduled) return;
+            it->retryScheduled = true;
+            const quint64 serial = it->serial;
+            QPointer<QDialog> weakDialog(dialog);
+            QPointer<QLineEdit> weakField(field);
+            QTimer::singleShot(kRetryDelayMs - it->lastSubmission.elapsed(), this,
+                               [this, weakDialog, weakField, key, serial] {
+                auto current = saved_.find(key);
+                if (current == saved_.end() || current->serial != serial) return;
+                current->retryScheduled = false;
+                if (weakDialog && weakDialog->isVisible() && weakField)
+                    tryAutomatic(weakDialog, key, weakField);
+            });
+            return;
+        }
+
+        // Count before clicking: P4V may synchronously show another dialog.
         ++it->submissions;
+        it->lastSubmission.start();
+        it->pending = true;
+        it->accepted = false;
+        it->pendingDialog = dialog;
+        it->retryScheduled = false;
+        const quint64 serial = ++it->serial;
+        QPointer<QDialog> weakDialog(dialog);
+        QPointer<QLineEdit> weakField(field);
+        connect(dialog, &QDialog::accepted, dialog, [this, key, serial] {
+            auto current = saved_.find(key);
+            if (current != saved_.end() && current->serial == serial)
+                current->accepted = true;
+        });
         field->setText(it->password);
         submit->click();
 
-        // Some P4V builds leave the *same* dialog open on a rejected password
-        // rather than showing it again. Retry only after an explicit error.
-        QPointer<QDialog> weakDialog(dialog);
-        QPointer<QLineEdit> weakField(field);
-        QTimer::singleShot(1500, dialog, [this, weakDialog, weakField, key] {
-            if (!weakDialog || !weakDialog->isVisible() || !weakField ||
-                !invalidPassword(weakDialog)) return;
-            auto it = saved_.find(key);
-            if (it == saved_.end() || it->submissions >= kMaxAttempts) return;
-            // Respect manual edits made after the rejected submission.
-            if (!weakField->text().isEmpty() && weakField->text() != it->password) return;
-            tryAutomatic(weakDialog, key, weakField);
+        // Only a completed, accepted dialog without a subsequent challenge
+        // resets the budget. A hidden/rejected dialog alone is not success.
+        QTimer::singleShot(kRetryDelayMs, this, [this, weakDialog, weakField, key, serial] {
+            checkAttempt(key, serial, weakDialog, weakField);
         });
+    }
+
+    void checkAttempt(const QString& key, quint64 serial, QPointer<QDialog> dialog,
+                      QPointer<QLineEdit> field) {
+        auto current = saved_.find(key);
+        if (current == saved_.end() || current->serial != serial || !current->pending)
+            return;
+        if (current->accepted && (!dialog || !dialog->isVisible())) {
+            current->submissions = 0;
+            current->pending = false;
+            current->lastSubmission.invalidate();
+            return;
+        }
+        if (dialog && dialog->isVisible()) {
+            if (field && invalidPassword(dialog)) {
+                current->pending = false;
+                tryAutomatic(dialog, key, field);
+                return;
+            }
+            // The server may respond after 10 seconds. Wait for an explicit
+            // error instead of treating a slow request as a failed login.
+            QTimer::singleShot(2000, this, [this, key, serial, dialog, field] {
+                checkAttempt(key, serial, dialog, field);
+            });
+        }
     }
 };
 
