@@ -2,6 +2,7 @@
 #include "preferences.h"
 #include "background_login.h"
 #include "changelist_links.h"
+#include "submit_ai.h"
 
 #include <windows.h>
 
@@ -377,6 +378,7 @@ DWORD WINAPI bootstrap(void*) {
                 auto* watcher = new PasswordWatcher(app);
                 app->installEventFilter(watcher);
                 installChangelistLinks(app);
+                installSubmitAiDescription(app);
                 // Cover a dialog that appeared between startup and injection.
                 for (auto* widget : QApplication::topLevelWidgets()) {
                     if (auto* main = qobject_cast<QMainWindow*>(widget))

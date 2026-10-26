@@ -1,19 +1,47 @@
 #include "../../src/changelist_links.h"
+#include "../../src/preferences.h"
+#include "../../src/submit_ai.h"
 #include <QApplication>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDialog>
+#include <QDialogButtonBox>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QGridLayout>
+#include <QLabel>
 #include <QMouseEvent>
+#include <QPushButton>
 #include <QScrollBar>
+#include <QSettings>
+#include <QSplitter>
+#include <QStackedWidget>
+#include <QStandardItemModel>
 #include <QSyntaxHighlighter>
+#include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextBrowser>
 #include <QTextDocumentFragment>
 #include <QTextLayout>
 #include <QTest>
+#include <QThread>
+#include <QTimer>
+#include <QTreeView>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 #include <cstdio>
+#include <functional>
 
 class UIChangeWindow final : public QDialog {
+    Q_OBJECT
+};
+class UISubmitWindow final : public QDialog {
+    Q_OBJECT
+};
+class P4VPreferencesDialog final : public QDialog {
+    Q_OBJECT
+};
+class ConnectionsPage final : public QWidget {
     Q_OBJECT
 };
 namespace Gui {
@@ -38,6 +66,83 @@ void check(bool ok, const char* message) {
     if (!ok) ++failures;
 }
 void events() { for (int i = 0; i < 12; ++i) QApplication::processEvents(); }
+bool waitFor(const std::function<bool()>& condition, int ms = 6000) {
+    QElapsedTimer clock;
+    clock.start();
+    while (!condition() && clock.elapsed() < ms) {
+        QApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(5);
+    }
+    return condition();
+}
+struct SubmitFixture {
+    UISubmitWindow window;
+    QGridLayout* grid = nullptr;
+    QLabel* descLabel = nullptr;
+    Gui::ExpandableTextEdit* desc = nullptr;
+    QTreeView* filesTree = nullptr;
+    QStandardItemModel* filesModel = nullptr;
+    SubmitFixture(const QString& title = QStringLiteral("Submit Changelist: 4660363 (pengshuai.yin_02,  p4.hon.jingle.cn:1666,  pengshuai.yin)")) {
+        window.setWindowTitle(title);
+        window.resize(700, 500);
+        auto* outer = new QVBoxLayout(&window);
+        grid = new QGridLayout();
+        outer->addLayout(grid);
+        auto* descButton = new QPushButton(&window);
+        descButton->setObjectName(QStringLiteral("descButton"));
+        descButton->hide();
+        descLabel = new QLabel(QStringLiteral("Write a changelist description"), &window);
+        descLabel->setObjectName(QStringLiteral("descLabel"));
+        auto* descContainer = new QWidget(&window);
+        auto* descLayout = new QVBoxLayout(descContainer);
+        desc = new Gui::ExpandableTextEdit(descContainer);
+        desc->setObjectName(QStringLiteral("desc"));
+        desc->setReadOnly(false);
+        descLayout->addWidget(desc);
+        grid->addWidget(descButton, 0, 0);
+        grid->addWidget(descLabel, 0, 1);
+        grid->addWidget(descContainer, 1, 1);
+
+        auto* fileContainer = new QWidget(&window);
+        fileContainer->setObjectName(QStringLiteral("fileContainer"));
+        auto* fileLayout = new QVBoxLayout(fileContainer);
+        filesTree = new QTreeView(fileContainer);
+        filesTree->setObjectName(QStringLiteral("filesTree"));
+        filesModel = new QStandardItemModel(0, 3, filesTree);
+        filesTree->setModel(filesModel);
+        fileLayout->addWidget(filesTree);
+        grid->addWidget(fileContainer, 3, 1);
+    }
+    void addFileRow(const QString& file, const QString& folder, bool checked) {
+        auto* c0 = new QStandardItem();
+        c0->setCheckable(true);
+        c0->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+        auto* c1 = new QStandardItem(file);
+        auto* c2 = new QStandardItem(folder);
+        filesModel->appendRow({c0, c1, c2});
+    }
+    void show() { window.show(); events(); }
+};
+struct PreferencesFixture {
+    P4VPreferencesDialog dialog;
+    QSplitter* splitter = nullptr;
+    QTreeWidget* tree = nullptr;
+    QStackedWidget* stack = nullptr;
+    QDialogButtonBox* buttons = nullptr;
+    PreferencesFixture() {
+        auto* layout = new QVBoxLayout(&dialog);
+        splitter = new QSplitter(&dialog);
+        splitter->setObjectName(QStringLiteral("preferenceSplitter"));
+        tree = new QTreeWidget(splitter);
+        auto* connItem = new QTreeWidgetItem(tree);
+        connItem->setText(0, QStringLiteral("Connections"));
+        stack = new QStackedWidget(splitter);
+        stack->addWidget(new ConnectionsPage());
+        layout->addWidget(splitter);
+        buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Apply | QDialogButtonBox::Cancel, &dialog);
+        layout->addWidget(buttons);
+    }
+};
 struct Fixture {
     UIChangeWindow window;
     Gui::ExpandableTextEdit* source = new Gui::ExpandableTextEdit(&window);
@@ -259,6 +364,119 @@ int main(int argc, char** argv) {
         fixture.text(QStringLiteral("[Jira]BR-1"));
         fixture.show();
         check(!highlighted(fixture.browser, 6), "unrecognized browser is untouched");
+    }
+    if (argc >= 2) {
+        const QString fakeCli = QString::fromLocal8Bit(argv[1]);
+        QTemporaryDir tempDir;
+        const QString settingsPath = tempDir.filePath(QStringLiteral("p4vpatch.ini"));
+        const QString statePath = tempDir.filePath(QStringLiteral("test-state.ini"));
+        qputenv("P4VPATCH_SETTINGS_PATH", settingsPath.toUtf8());
+        qputenv("P4VPATCH_CODEX_EXECUTABLE", fakeCli.toUtf8());
+        qputenv("P4VPATCH_P4_EXECUTABLE", fakeCli.toUtf8());
+        qputenv("P4VPATCH_TEST_STATE", statePath.toUtf8());
+        qputenv("P4VPATCH_SUPPRESS_AI_MESSAGEBOX", "1");
+
+        // 1. Parser and description cleaner tests
+        const auto parsedNumbered = parseSubmitWindowTitle(
+            QStringLiteral("Submit Changelist: 4660363 (pengshuai.yin_02,  p4.hon.jingle.cn:1666,  pengshuai.yin)"));
+        check(parsedNumbered && parsedNumbered->changelist == QStringLiteral("4660363") &&
+              parsedNumbered->client == QStringLiteral("pengshuai.yin_02") &&
+              parsedNumbered->server == QStringLiteral("p4.hon.jingle.cn:1666") &&
+              parsedNumbered->user == QStringLiteral("pengshuai.yin"),
+              "parse numbered Submit Changelist window title");
+        const auto parsedDefault = parseSubmitWindowTitle(
+            QStringLiteral("Submit Changelist: default (ws_client, ssl:p4:1666, alice)"));
+        check(parsedDefault && parsedDefault->changelist == QStringLiteral("default") &&
+              parsedDefault->client == QStringLiteral("ws_client") &&
+              parsedDefault->server == QStringLiteral("ssl:p4:1666") &&
+              parsedDefault->user == QStringLiteral("alice"),
+              "parse default Submit Changelist window title");
+        check(!parseSubmitWindowTitle(QStringLiteral("Submitted Changelist: 123")) &&
+              !parseSubmitWindowTitle(QStringLiteral("Submit Changelist: 123 (-bad, p4:1666, alice)")),
+              "reject non-submit or option-injected window titles");
+        check(cleanGeneratedDescription(QStringLiteral("```text\n修复配置加载问题\n```")) == QStringLiteral("修复配置加载问题"),
+              "strip markdown code fences from generated description");
+
+        // 2. Preferences -> Patch -> Codex model fetching and saving
+        {
+            PreferencesFixture prefs;
+            installPatchPreferences(&prefs.dialog);
+            auto* modelCombo = prefs.dialog.findChild<QComboBox*>(QStringLiteral("p4vpatch.codexModel"));
+            auto* refreshBtn = prefs.dialog.findChild<QPushButton*>(QStringLiteral("p4vpatch.codexRefreshModels"));
+            auto* statusLabel = prefs.dialog.findChild<QLabel*>(QStringLiteral("p4vpatch.codexModelStatus"));
+            check(modelCombo && refreshBtn && statusLabel, "Patch preferences includes Codex model selector and refresh button");
+            check(waitFor([&] { return modelCombo->count() == 3 && refreshBtn->isEnabled(); }),
+                  "Codex model list fetched asynchronously via app-server model/list API (hidden models excluded)");
+            check(modelCombo->itemText(0) == QStringLiteral("gpt-6-astra") &&
+                  modelCombo->itemText(1) == QStringLiteral("gpt-5.6-sol") &&
+                  modelCombo->itemText(2) == QStringLiteral("gpt-5.6-luna") &&
+                  modelCombo->currentText() == QStringLiteral("gpt-5.6-luna"),
+                  "Visible Codex models populated and luna model selected by default");
+
+            prefs.buttons->button(QDialogButtonBox::Apply)->click();
+            events();
+            check(codexModel() == QStringLiteral("gpt-5.6-luna"),
+                  "Apply saves default selected luna model to p4vpatch.ini");
+        }
+
+        // 3. Submit Changelist AI button, waiting animation, diff passing, and description overwrite
+        {
+            installSubmitAiDescription(&app);
+            SubmitFixture submit;
+            submit.desc->setPlainText(QStringLiteral("FFI审计出包shelve"));
+            submit.addFileRow(QStringLiteral("GameConfig.cs"),
+                              QStringLiteral("//DTS/Branch/FF_PRELive/Client/Assets/Scripts/COWLauncher"), true);
+            submit.addFileRow(QStringLiteral("IgnoredFile.cs"),
+                              QStringLiteral("//DTS/Branch/FF_PRELive/Client/Assets/Scripts/COWLauncher"), false);
+            submit.show();
+
+            auto* aiBtn = submit.window.findChild<QPushButton*>(QStringLiteral("p4vpatch.aiGenerateDescription"));
+            check(aiBtn != nullptr, "Submit Changelist window gets AI Generate button");
+            inspectSubmitDialog(&submit.window);
+            check(submit.window.findChildren<QPushButton*>(QStringLiteral("p4vpatch.aiGenerateDescription")).size() == 1,
+                  "Submit Changelist AI button installation is idempotent");
+            if (aiBtn) {
+                check(aiBtn->geometry().left() > submit.descLabel->geometry().right(),
+                      "AI Generate button is positioned to the right of Write a changelist description label");
+                int descChangedCount = 0;
+                QObject::connect(submit.desc, &QTextEdit::textChanged, &app, [&] { ++descChangedCount; });
+
+                aiBtn->click();
+                check(aiBtn->property("p4vpatch.aiLoading").toBool() &&
+                      !aiBtn->isEnabled() &&
+                      aiBtn->text() == QStringLiteral("Generating..."),
+                      "Clicking AI Generate immediately starts waiting state and disables button");
+                check(waitFor([&] { return aiBtn->property("p4vpatch.aiSpinnerStep").toInt() > 0; }, 2000),
+                      "Waiting animation spinner advances frames while waiting for AI response");
+                check(waitFor([&] { return !aiBtn->property("p4vpatch.aiLoading").toBool(); }),
+                      "AI generation completes asynchronously");
+                check(aiBtn->isEnabled() && aiBtn->text() == QStringLiteral("AI Generate"),
+                      "Button state and label restored after generation completes");
+                check(submit.desc->toPlainText() == QStringLiteral("更新 GameConfig 印度区正式服与调试开关配置") &&
+                      descChangedCount > 0,
+                      "Generated description overwrites the description text edit and emits textChanged");
+
+                QSettings state(statePath, QSettings::IniFormat);
+                state.sync();
+                check(state.value(QStringLiteral("lastCodexModel")).toString() == QStringLiteral("gpt-5.6-luna"),
+                      "Codex CLI invoked with the model configured in Patch preferences");
+                const QString prompt = state.value(QStringLiteral("lastCodexPrompt")).toString();
+                check(prompt.contains(QStringLiteral("GameConfig.cs")) &&
+                      prompt.contains(QStringLiteral("ffi-version.freefireind.in")) &&
+                      !prompt.contains(QStringLiteral("IgnoredFile.cs")),
+                      "Codex CLI receives checked changelist diff content and excludes unchecked files");
+
+                // 4. Error handling preserves existing description text
+                state.setValue(QStringLiteral("scenario"), QStringLiteral("codex-error"));
+                state.sync();
+                aiBtn->click();
+                check(waitFor([&] { return !aiBtn->property("p4vpatch.aiLoading").toBool(); }),
+                      "Failed AI generation finishes and stops waiting animation");
+                check(submit.desc->toPlainText() == QStringLiteral("更新 GameConfig 印度区正式服与调试开关配置") &&
+                      submit.window.property("p4vpatch.lastAiError").toString().contains(QStringLiteral("quota exceeded")),
+                      "Failed AI generation does not overwrite existing description text");
+            }
+        }
     }
     events();
     QDesktopServices::unsetUrlHandler(QStringLiteral("https"));

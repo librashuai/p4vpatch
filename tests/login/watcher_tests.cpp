@@ -17,6 +17,8 @@ static std::optional<BackgroundLoginOptions> testBackgroundLoginOptions() { retu
 
 void installTerminal(QMainWindow*) {}
 void installPatchPreferences(QDialog*) {}
+void installSubmitAiDescription(QApplication*) {}
+void inspectSubmitDialog(QDialog*) {}
 
 class UIWorkspace2 final : public QMainWindow {
     Q_OBJECT

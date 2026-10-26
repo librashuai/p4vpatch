@@ -1,6 +1,6 @@
 # P4V 增强补丁（实验性）
 
-功能：自动重新登录、**View → Terminal** 原生终端标签、**Submitted Changelist 的 Jira 描述链接**，以及复用 P4V Qt 运行时的 **GUI Launcher / GitHub Release 手动更新**。发现新版一定显示欢迎页，只有用户确认后才更新补丁。模拟主窗口测试见 [`tests/terminal-host/README.md`](tests/terminal-host/README.md)。
+功能：自动重新登录、**View → Terminal** 原生终端标签、**Submitted Changelist 的 Jira 描述链接**、**Submit Changelist 的 AI 生成描述**，以及复用 P4V Qt 运行时的 **GUI Launcher / GitHub Release 手动更新**。发现新版一定显示欢迎页，只有用户确认后才更新补丁。模拟主窗口测试见 [`tests/terminal-host/README.md`](tests/terminal-host/README.md)。
 
 适用于 Windows x64 上的 **P4V 2026.2 / Qt 6.8.6**。启动器启动 P4V，通过 `LoadLibraryW` 加载 `p4vpatch.dll`；DLL 在 Qt 应用中安装事件过滤器。**不会修改** P4V 可执行文件或其自带的 DLL。
 
@@ -52,7 +52,7 @@ python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O .sdk --modul
 
 启动后选择 **View → Terminal**，或点击 Log/Dashboard 旁的 Terminal 标签。此标签是真正加入 P4V `UILogTabWidget` 的第三页，不是另一个 dock 或绘制的假标签。WebEngine/xterm.js 显示 ConPTY 的终端（默认为 `cmd.exe`）；打开时会聚焦输入，关闭标签的 × 只隐藏页面，重开继续使用同一进程。新建终端会以当前 P4V workspace 的本地根目录为默认工作目录；未选择 workspace 或根目录不可用时回退到用户主目录。已打开的终端保持原工作目录，切换 workspace 后需重新启动 P4V 才能创建新会话。若只需登录补丁，可在启动前设置 `P4VPATCH_DISABLE_TERMINAL=1`。
 
-**Patch 设置：** 打开 **Edit → Preferences → Patch**，在 **Terminal Shell** 中选择 `cmd.exe`（默认）、`pwsh`（从 PATH 查找），或使用 Browse 指定已有的 `pwsh.exe` 绝对路径。点击 P4V 原有的 **Apply/OK** 保存，**Cancel** 不保存。配置独立保存在 P4V 的 `ApplicationSettings.xml` 所在目录下的 `~/.p4qt/p4vpatch.ini`，不改写 P4V 的设置文件。已经打开的终端继续使用原有 shell，重新启动 P4V 后生效。
+**Patch 设置：** 打开 **Edit → Preferences → Patch**，在 **Terminal Shell** 中选择 `cmd.exe`（默认）、`pwsh`（从 PATH 查找），或使用 Browse 指定已有的 `pwsh.exe` 绝对路径；在 **Codex** 区域中可选择用于生成提交描述的 AI 模型（模型列表通过本地 Codex CLI 的 `app-server` `model/list` API 自动异步拉取，也可点击 **Refresh** 刷新）。点击 P4V 原有的 **Apply/OK** 保存，**Cancel** 不保存。配置独立保存在 P4V 的 `ApplicationSettings.xml` 所在目录下的 `~/.p4qt/p4vpatch.ini`（`Terminal/Shell` 与 `Codex/Model`），不改写 P4V 的设置文件。已经打开的终端继续使用原有 shell，重新启动 P4V 后生效。
 
 **兼容性处理：** P4V 2026.2 私有的焦点回调不能处理外来标签页；直接调用 Qt `addTab` 会导致崩溃。补丁只在安装的 Qt **6.8.6** 中校验并替换 Qt6Widgets 对 `QMetaObject::activate` 的一项导入，使 Terminal 页面存在期间不触发 `QApplication::focusChanged`；其余应用信号保持不变。导入签名/版本不匹配时**不显示终端入口**，而不是冒险继续。退出 P4V 前会先分离外来页面，避免宿主析构时崩溃。已在真实 P4V 中重复测试：实际屏幕可见终端提示符和输入光标、输入执行、Log/Dashboard/Terminal 切换、关闭重开、空闲等待、File → Exit 和 Connection → Close Connection；本轮无新崩溃转储，也没有操作期间主窗口 Hide/Show。模拟测试不替代这些真实测试。
 
@@ -63,6 +63,15 @@ python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O .sdk --modul
 在已提交 Changelist 的只读 Description 中，将 `[Jira]BR-339863` 中的 **BR-339863** 显示为带下划线的链接，点击通过系统默认浏览器打开 `https://jira.garena.com/browse/BR-339863`。规则为 `\[Jira\](BR-[0-9]+)\b`，区分大小写、支持多个编号和任意位数数字。
 
 直接增强原有 `markdownBrowser`，不替换控件或改变布局、不修改 Description/HTML、不向 Perforce 写数据。保留 Markdown、已有链接、选择、复制及右键菜单；拖选或 Shift 选择不打开链接。仅匹配已核实的 Submitted Changelist 窗口和只读控件，Pending/Submit 编辑区域不受影响。新增链接属于显示层增强，不新增原生“复制链接地址”菜单。已有语法高亮器时保守跳过。测试与边界见 [tests/changelist/README.md](tests/changelist/README.md)。
+
+## Submit Changelist 的 AI 生成描述
+
+在 `Submit Changelist` 提交窗口中，`Write a changelist description` 标题右侧提供 **AI Generate** 按钮：
+
+- 点击后按钮切换为 `Generating...` 并显示旋转等待动画，同时禁用重复点击。
+- 后台异步调用 `p4.exe` 获取当前 Changelist 已勾选文件的变更与统一 diff（若无已打开文件且为编号 Changelist，则回退读取 shelved diff），再调用本地 `codex exec` 生成简洁的中文提交描述。
+- 生成使用的模型读取自 **Edit → Preferences → Patch → Codex** 中保存的 `Codex/Model`；未配置时默认优先选择 `luna` 模型（如 `gpt-5.6-luna`）。
+- 生成成功后自动覆盖填入 `description` 文本框并触发 P4V 原有的文本变更处理；失败时保留原有描述内容并提示错误原因。
 
 ## 自动重新登录行为
 
